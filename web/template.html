@@ -1,0 +1,615 @@
+<title>秋招金融政策手册</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F6F3EC; --surface:#FFFDF8; --raised:#FBF8F1;
+  --ink:#17191C; --ink-2:#3D3F44; --muted:#6E6A61;
+  --rule:#E2DCCF; --rule-soft:#EDE8DD;
+  --seal:#A3342B; --seal-soft:#F0DFDA;
+  --jade:#2E5257; --jade-soft:#DFE9E7;
+  --gold:#8A6A22;
+  --shadow:0 1px 2px rgba(23,25,28,.05), 0 8px 24px -16px rgba(23,25,28,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#131519; --surface:#1A1D22; --raised:#20242A;
+    --ink:#E9E6DF; --ink-2:#C3BFB6; --muted:#948E84;
+    --rule:#2B2F36; --rule-soft:#23272D;
+    --seal:#DE7A68; --seal-soft:#3A2320;
+    --jade:#7FB0AA; --jade-soft:#1E2C2C;
+    --gold:#C6A45A;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#131519; --surface:#1A1D22; --raised:#20242A;
+  --ink:#E9E6DF; --ink-2:#C3BFB6; --muted:#948E84;
+  --rule:#2B2F36; --rule-soft:#23272D;
+  --seal:#DE7A68; --seal-soft:#3A2320;
+  --jade:#7FB0AA; --jade-soft:#1E2C2C;
+  --gold:#C6A45A;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.serif{font-family:"Noto Serif SC","Songti SC",SimSun,Georgia,serif}
+.mono,.num{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-variant-numeric:tabular-nums}
+a{color:inherit}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--seal);outline-offset:2px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------------- masthead ---------------- */
+.masthead{border-bottom:1px solid var(--rule);background:var(--surface)}
+.mast-in{max-width:1020px;margin:0 auto;padding:26px 22px 0;
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:18px}
+.brand{flex:1 1 300px;min-width:0}
+.seal{display:inline-flex;align-items:center;gap:8px;
+  font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--seal);margin-bottom:6px}
+.seal::before{content:"";width:22px;height:1px;background:var(--seal)}
+h1{margin:0;font-size:clamp(25px,4.4vw,34px);font-weight:700;letter-spacing:.01em;
+  text-wrap:balance;line-height:1.25}
+.tagline{margin:6px 0 0;color:var(--muted);font-size:13.5px;max-width:60ch}
+.mast-meta{display:flex;gap:20px;padding-bottom:4px;flex-wrap:wrap}
+.stat{text-align:right}
+.stat b{display:block;font-family:"IBM Plex Mono",monospace;font-size:21px;
+  font-weight:500;line-height:1.2;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--muted);letter-spacing:.08em}
+
+/* ---------------- tabs ---------------- */
+.tabs{max-width:1020px;margin:0 auto;padding:16px 22px 0;display:flex;gap:2px}
+.tab{background:none;border:0;padding:9px 16px 11px;font-size:14px;font-weight:500;
+  color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--seal)}
+.tab:hover{color:var(--ink)}
+
+.wrap{max-width:1020px;margin:0 auto;padding:26px 22px 90px}
+.panel[hidden]{display:none}
+
+/* ---------------- filters ---------------- */
+.filters{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid var(--rule-soft)}
+.fgroup{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.flabel{font-size:11px;letter-spacing:.14em;color:var(--muted);margin-right:2px}
+.chip{background:var(--surface);border:1px solid var(--rule);border-radius:2px;
+  padding:4px 11px;font-size:12.5px;color:var(--ink-2);transition:.15s}
+.chip:hover{border-color:var(--seal)}
+.chip[aria-pressed="true"]{background:var(--seal);border-color:var(--seal);color:#fff}
+:root[data-theme="dark"] .chip[aria-pressed="true"],
+.chip[aria-pressed="true"]{color:#FFFDF8}
+.search{flex:1 1 190px;min-width:150px;background:var(--surface);
+  border:1px solid var(--rule);border-radius:2px;padding:7px 11px;font-size:13.5px;
+  color:var(--ink)}
+.search::placeholder{color:var(--muted)}
+
+/* ---------------- term list ---------------- */
+.tgroup{margin-bottom:34px}
+.tgroup > h2{margin:0 0 2px;font-size:13px;font-weight:500;letter-spacing:.18em;
+  color:var(--jade);text-transform:none}
+.tgroup > .ghint{margin:0 0 12px;font-size:12px;color:var(--muted)}
+.term{border-top:1px solid var(--rule-soft)}
+.term:last-child{border-bottom:1px solid var(--rule-soft)}
+.thead{display:flex;align-items:baseline;gap:12px;width:100%;background:none;
+  border:0;padding:13px 2px;text-align:left}
+.thead:hover .tname{color:var(--seal)}
+.tname{font-family:"Noto Serif SC","Songti SC",serif;font-size:16px;font-weight:500;
+  flex:1 1 auto;min-width:0;transition:.15s}
+.heat{color:var(--gold);font-size:11px;letter-spacing:1px;white-space:nowrap}
+.tinst{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.mark{border:1px solid var(--rule);background:var(--surface);border-radius:2px;
+  padding:2px 8px;font-size:11px;color:var(--muted);white-space:nowrap}
+.mark[data-on="1"]{background:var(--jade-soft);border-color:var(--jade);color:var(--jade)}
+.tbody{padding:2px 2px 24px;max-width:74ch}
+.tbody[hidden]{display:none}
+.field{margin:0 0 14px}
+.fk{font-size:11px;letter-spacing:.16em;color:var(--muted);display:block;margin-bottom:3px}
+.fv{margin:0;color:var(--ink-2)}
+.points{margin:0;padding-left:0;list-style:none;counter-reset:pt}
+.points li{counter-increment:pt;position:relative;padding-left:26px;margin-bottom:7px;
+  color:var(--ink-2)}
+.points li::before{content:counter(pt);position:absolute;left:0;top:.15em;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--seal);
+  border:1px solid var(--seal-soft);background:var(--seal-soft);
+  width:18px;height:18px;display:grid;place-items:center;border-radius:2px}
+.speak{background:var(--raised);border-left:3px solid var(--seal);
+  padding:14px 16px;margin:0;color:var(--ink)}
+.speak .fk{color:var(--seal)}
+.snap{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:2px}
+.snap td{border-bottom:1px solid var(--rule-soft);padding:5px 8px 5px 0;
+  vertical-align:top;color:var(--ink-2)}
+.snap td:first-child{color:var(--muted);white-space:nowrap;width:1%;padding-right:16px}
+.snap td:last-child{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.qa{border-top:1px dotted var(--rule);padding-top:9px;margin-top:9px}
+.qa q{display:block;font-weight:500;quotes:none}
+.qa q::before{content:"追问 ";color:var(--seal);font-size:11px;letter-spacing:.1em}
+.qa p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
+.rel{font-size:12px;color:var(--muted);margin-top:10px}
+.rel button{background:none;border:0;padding:0 2px;color:var(--jade);
+  text-decoration:underline;text-underline-offset:2px;font-size:12px}
+
+/* ---------------- quiz ---------------- */
+.qbar{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.progress{flex:1 1 160px;height:3px;background:var(--rule);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--seal);width:0;transition:width .35s}
+.qcount{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+  box-shadow:var(--shadow);padding:24px 26px 26px;max-width:78ch}
+.qmeta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  font-size:11px;color:var(--muted);letter-spacing:.06em;margin-bottom:12px}
+.qid{font-family:"IBM Plex Mono",monospace;color:var(--seal)}
+.qtext{font-family:"Noto Serif SC","Songti SC",serif;font-size:18px;font-weight:500;
+  line-height:1.65;margin:0 0 16px;text-wrap:balance}
+.opts{list-style:none;margin:0 0 18px;padding:0;display:flex;flex-direction:column;gap:7px}
+.opts li{border:1px solid var(--rule);border-radius:2px;padding:9px 13px;
+  background:var(--raised);color:var(--ink-2);font-size:14px}
+.opts li[data-ok="1"]{border-color:var(--jade);background:var(--jade-soft);color:var(--ink)}
+.answer[hidden]{display:none}
+.answer{border-top:1px solid var(--rule);padding-top:16px;margin-top:4px}
+.acts{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}
+.btn{border:1px solid var(--rule);background:var(--surface);border-radius:2px;
+  padding:8px 16px;font-size:13.5px;transition:.15s}
+.btn:hover{border-color:var(--ink-2)}
+.btn-primary{background:var(--seal);border-color:var(--seal);color:#FFFDF8}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-jade{border-color:var(--jade);color:var(--jade)}
+.btn-jade:hover{background:var(--jade-soft)}
+
+/* ---------------- timeline ---------------- */
+.tl-intro{max-width:70ch;color:var(--ink-2);margin:0 0 6px}
+.tl-legend{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0 28px;font-size:12px}
+.tl-legend span{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.era{margin-bottom:30px}
+.era-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  padding-bottom:8px;border-bottom:1px solid var(--rule);margin-bottom:16px}
+.era-head b{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:500;
+  color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.era-head em{font-style:normal;font-size:11px;letter-spacing:.14em;color:var(--seal);
+  border:1px solid var(--seal-soft);background:var(--seal-soft);padding:2px 8px;
+  border-radius:2px}
+.era-head span{font-family:"Noto Serif SC","Songti SC",serif;font-size:14.5px;
+  color:var(--ink-2);margin-left:auto}
+.era-body{position:relative;padding-left:24px;border-left:1px solid var(--rule);
+  margin-left:5px}
+.ev{position:relative;margin-bottom:13px;max-width:64ch}
+.ev::before{content:"";position:absolute;left:-29px;top:8px;width:9px;height:9px;
+  border-radius:50%;background:var(--paper);border:2px solid var(--rule)}
+.ev[data-line="money"]::before{border-color:var(--seal)}
+.ev[data-line="market"]::before{border-color:var(--jade)}
+.ev[data-line="tech"]::before{border-color:var(--gold)}
+.ev[data-line="open"]::before{border-color:var(--muted)}
+.ev .when{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  margin-right:8px}
+.ev .what{font-weight:500}
+.ev .why{display:block;color:var(--muted);font-size:13px;margin-top:1px}
+.note{background:var(--raised);border:1px solid var(--rule);border-left:3px solid var(--jade);
+  padding:14px 16px;margin:26px 0 0;max-width:70ch;font-size:13.5px;color:var(--ink-2)}
+.note b{color:var(--ink)}
+
+.foot{max-width:1020px;margin:0 auto;padding:0 22px 46px;color:var(--muted);
+  font-size:12px;border-top:1px solid var(--rule-soft);padding-top:18px}
+.empty{color:var(--muted);padding:34px 0;text-align:center}
+.sync{font-size:11px;color:var(--muted)}
+
+@media (max-width:640px){
+  .mast-meta{display:none}
+  .wrap{padding:20px 16px 70px}
+  .mast-in,.tabs{padding-left:16px;padding-right:16px}
+  .era{padding-left:16px}
+  .era::before{left:3px}
+  .era-head b{position:static;display:block;width:auto;text-align:left}
+  .era-head em{position:static;display:inline;margin-left:8px}
+  .ev::before{left:-17px}
+  .card{padding:18px}
+}
+</style>
+
+<header class="masthead">
+  <div class="mast-in">
+    <div class="brand">
+      <div class="seal">政策为纲 · 考点为用</div>
+      <h1>秋招金融政策手册</h1>
+      <p class="tagline">面向券商、公募基金、银行秋招的热词与考点库 —— 每个词都配好出处、考点清单、
+        60–90 秒口语化答法和追问应对。</p>
+    </div>
+    <div class="mast-meta">
+      <div class="stat"><b id="nTerms">0</b><span>热词</span></div>
+      <div class="stat"><b id="nQs">0</b><span>题目</span></div>
+      <div class="stat"><b id="nDone">0</b><span>已掌握</span></div>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-view="terms">热词库</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="quiz">刷题</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="timeline">演变脉络</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <!-- ============ 热词库 ============ -->
+  <section class="panel" id="v-terms" role="tabpanel">
+    <div class="filters">
+      <input class="search" id="q" type="search" placeholder="搜索词条、定义、考点…" aria-label="搜索热词">
+      <div class="fgroup" id="fInst"><span class="flabel">机构</span></div>
+      <div class="fgroup" id="fHeat"><span class="flabel">热度</span></div>
+      <div class="fgroup"><button class="chip" id="fTodo" aria-pressed="false">只看未掌握</button></div>
+    </div>
+    <div id="termList"></div>
+  </section>
+
+  <!-- ============ 刷题 ============ -->
+  <section class="panel" id="v-quiz" role="tabpanel" hidden>
+    <div class="filters">
+      <div class="fgroup" id="fBoard"><span class="flabel">板块</span></div>
+      <div class="fgroup"><button class="chip" id="fWrong" aria-pressed="false">只刷错题</button></div>
+    </div>
+    <div class="qbar">
+      <span class="qcount" id="qPos">—</span>
+      <div class="progress"><i id="qBar"></i></div>
+      <span class="qcount" id="qAcc"></span>
+    </div>
+    <div id="quizHost"></div>
+  </section>
+
+  <!-- ============ 演变脉络 ============ -->
+  <section class="panel" id="v-timeline" role="tabpanel" hidden>
+    <p class="tl-intro"><b>一句话结论：</b>“十四五”的关键词是<b>防</b>，“十五五”的关键词是<b>建</b>。
+      判断一个新提法属于哪一阶段，看它的动词——“整治／规范／化解”是十四五语法，
+      “完善／构建／培育”是十五五语法。</p>
+    <div class="tl-legend">
+      <span><i class="dot" style="background:var(--seal)"></i>货币与宏观</span>
+      <span><i class="dot" style="background:var(--jade)"></i>资本市场</span>
+      <span><i class="dot" style="background:var(--gold)"></i>科技与数字金融</span>
+      <span><i class="dot" style="background:var(--muted)"></i>对外开放</span>
+    </div>
+    <div id="tlHost"></div>
+    <div class="note">
+      <b>面试里说数字，一定要带截止时点。</b>
+      “截至今年 6 月末，QDII 累计批准额度是 1761.69 亿美元”，
+      比“QDII 额度一千七百多亿”专业得多，也比记错一个数字安全得多。
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span id="syncNote" class="sync">进度保存在本机浏览器。</span>
+  　本页内容用于求职学习整理，不构成投资建议；政策以官方原文为准，数字请按标注的截止时点核对最新来源。
+</footer>
+
+<script>
+const KB = __KB_DATA__;
+const TERMS = KB.terms, QS = KB.questions;
+
+/* ---------------- 演变脉络数据 ---------------- */
+const TL = [
+ {y:"2021—2023", tag:"十四五 · 防", h:"补短板、治乱象", ev:[
+  {d:"2021.07", line:"tech", t:"碳减排支持工具创设、全国碳市场上线", w:"结构性工具从支农支小扩展到绿色领域"},
+  {d:"2021.12", line:"market", t:"资管新规过渡期结束", w:"银行理财全面净值化，客户预期错配的问题随之而来"},
+  {d:"2023.02", line:"market", t:"全面注册制落地", w:"以信息披露为核心，审核重心从判断价值转向判断披露"},
+  {d:"2023.03", line:"money", t:"机构改革：一行一局一会", w:"银保监会撤销、组建金融监管总局；企业债审核划入证监会"},
+  {d:"2023.07", line:"money", t:"一揽子化债方案", w:"高息隐性债务转为低息政府债，后来成为“资产荒”的直接来源"},
+  {d:"2023.10", line:"money", t:"中央金融工作会议：金融强国 + 五篇大文章", w:"分水岭。此后所有政策的逻辑起点"},
+  {d:"2023.11", line:"open", t:"《商业银行资本管理办法》发布", w:"对标巴塞尔III最终版，三档差异化监管"}]},
+ {y:"2024", tag:"转折年", h:"定价锚换人、制度成体系", ev:[
+  {d:"2024.04", line:"market", t:"新“国九条”（第三个）", w:"1+N 体系；从“重融资”转向“投融资平衡”"},
+  {d:"2024.06", line:"money", t:"明确 7 天期逆回购为主要政策利率", w:"MLF 淡出政策利率，“降息”指的东西变了"},
+  {d:"2024.07", line:"money", t:"OMO 改固定利率数量招标、MLF 多重价位中标", w:"政策利率信号不再被投标行为干扰"},
+  {d:"2024.09", line:"market", t:"并购六条 + 中长期资金入市指导意见", w:"IPO 收紧后的替代退出通道；长钱短考被点名"},
+  {d:"2024.09", line:"tech", t:"银行 AIC 股权投资试点扩围", w:"表内资金比例 4%→10%，单只基金 20%→30%"},
+  {d:"2024.10", line:"market", t:"创设 SFISF 与股票回购增持再贷款", w:"央行工具第一次直接指向资本市场"},
+  {d:"2024.11", line:"market", t:"市值管理指引；12 万亿化债落地", w:"长期破净公司须披露估值提升计划"},
+  {d:"2024.12", line:"money", t:"基调改为“适度宽松”", w:"2011 年以来首次离开“稳健”；同月个人养老金全国实施"}]},
+ {y:"2025", tag:"十五五 · 建", h:"引长钱、造工具", ev:[
+  {d:"2025.01", line:"market", t:"六部委中长期资金入市实施方案", w:"大型国有险企新增保费 30% 投 A 股；公募持股每年增 10%"},
+  {d:"2025.03", line:"money", t:"国办发〔2025〕8 号：五篇大文章指导意见", w:"第一份国家层面的统一部署"},
+  {d:"2025.05", line:"tech", t:"科技创新债券推出", w:"首次把 VC/PE 纳入发行主体——解决的是耐心资本的来源"},
+  {d:"2025.05", line:"market", t:"《推动公募基金高质量发展行动方案》", w:"浮动费率 + 三年以上业绩考核权重不低于 80%"},
+  {d:"2025.06", line:"market", t:"科创板改革“1+6”", w:"科创成长层；第五套标准扩至人工智能、商业航天、低空经济"},
+  {d:"2025.08", line:"tech", t:"香港《稳定币条例》生效", w:"发牌制、储备 100% 足额；内地立场未变"},
+  {d:"2025.10", line:"money", t:"四中全会通过“十五五”规划建议", w:"金融强国写入顶层设计"}]},
+ {y:"2026", tag:"执行年", h:"制度落地", ev:[
+  {d:"2026.01", line:"market", t:"基金销售费用新规施行", w:"费率改革三步走的最后一步：管理费→佣金→销售费用"},
+  {d:"2026.02", line:"open", t:"CIPS 新业务规则施行", w:"完善参与者准入与风险处置"},
+  {d:"2026.03", line:"money", t:"全国人大通过“十五五”规划纲要", w:"注意程序：建议（四中全会）→ 纲要（人大）→ 部门专项规划"},
+  {d:"2026.06", line:"tech", t:"数字人民币国际运营中心签约首批 26 家直参", w:"从零售场景转向跨境与离岸"},
+  {d:"2026.07", line:"open", t:"外汇局表态 QDII 额度“常态化发放”并向公募倾斜", w:"截至 6 月末累计 1761.69 亿美元"},
+  {d:"2026.08", line:"money", t:"央行印发《“十五五”改革发展规划》", w:"加快完善中央银行制度；建设债券市场“科技板”"}]}
+];
+
+/* ---------------- 进度存储：db 优先，localStorage 兜底 ---------------- */
+const LS = "finradar-progress-v1";
+let state = {terms:{}, qs:{}};
+let dbDoc = null, saveTimer = null;
+
+function loadLocal(){
+  try{ const r = localStorage.getItem(LS); if(r) state = Object.assign(state, JSON.parse(r)); }
+  catch(e){}
+}
+function save(){
+  try{ localStorage.setItem(LS, JSON.stringify(state)); }catch(e){}
+  if(dbDoc){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{ dbDoc.set({...state, at:Date.now()}).catch(()=>{}); }, 600);
+  }
+  renderCounts();
+}
+loadLocal();
+
+(async ()=>{
+  try{
+    const db = await claude.use("db");
+    if(!db) return;
+    dbDoc = db.doc("progress/main");
+    const snap = await dbDoc.get();
+    if(snap && snap.terms){
+      state.terms = Object.assign({}, snap.terms, state.terms);
+      state.qs = Object.assign({}, snap.qs || {}, state.qs);
+      renderTerms(); renderCounts(); renderQuiz();
+    }
+    document.getElementById("syncNote").textContent = "进度已跨设备同步。";
+  }catch(e){}
+})();
+
+/* ---------------- 工具 ---------------- */
+const $ = s => document.querySelector(s);
+const el = (t, cls, txt) => { const n=document.createElement(t); if(cls)n.className=cls;
+  if(txt!=null)n.textContent=txt; return n; };
+const stars = n => "★".repeat(n) + "☆".repeat(5-n);
+function chip(label, on, fn){
+  const b = el("button","chip",label); b.setAttribute("aria-pressed", on?"true":"false");
+  b.onclick = () => fn(b); return b;
+}
+
+/* ---------------- 视图切换 ---------------- */
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x =>
+    x.setAttribute("aria-selected", String(x===t)));
+  ["terms","quiz","timeline"].forEach(v =>
+    $("#v-"+v).hidden = (v !== t.dataset.view));
+});
+
+/* ---------------- 热词库 ---------------- */
+const CATS = [...new Set(TERMS.map(t=>t.category))];
+let fInst = null, fHeat = 0, fTodo = false, kw = "";
+
+["券商","公募","银行"].forEach(i => $("#fInst").append(chip(i, false, b => {
+  fInst = (fInst===i) ? null : i;
+  $("#fInst").querySelectorAll(".chip").forEach(c =>
+    c.setAttribute("aria-pressed", String(c.textContent===fInst)));
+  renderTerms();
+})));
+[5,4].forEach(h => $("#fHeat").append(chip("★".repeat(h), false, b => {
+  fHeat = (fHeat===h) ? 0 : h;
+  $("#fHeat").querySelectorAll(".chip").forEach(c =>
+    c.setAttribute("aria-pressed", String(c.textContent.length===fHeat)));
+  renderTerms();
+})));
+$("#fTodo").onclick = () => { fTodo = !fTodo;
+  $("#fTodo").setAttribute("aria-pressed", String(fTodo)); renderTerms(); };
+$("#q").oninput = e => { kw = e.target.value.trim().toLowerCase(); renderTerms(); };
+
+function matches(t){
+  if(fInst && !(t.institutions||[]).includes(fInst)) return false;
+  if(fHeat && t.heat < fHeat) return false;
+  if(fTodo && state.terms[t.id]) return false;
+  if(kw){
+    const blob = [t.term, ...(t.aliases||[]), t.definition, t.why_hot,
+      ...(t.exam_points||[]), t.category].join(" ").toLowerCase();
+    if(!blob.includes(kw)) return false;
+  }
+  return true;
+}
+
+function termBody(t){
+  const b = el("div","tbody"); b.hidden = true;
+  const fld = (k,v) => { if(!v) return; const d=el("div","field");
+    d.append(el("span","fk",k), el("p","fv",v)); b.append(d); };
+  if((t.aliases||[]).length) fld("别名 / 关联", t.aliases.join("、"));
+  fld("定义", t.definition);
+  fld("出处", t.source);
+  fld("为什么热", t.why_hot);
+  if((t.exam_points||[]).length){
+    const d = el("div","field"); d.append(el("span","fk","考点清单"));
+    const ul = el("ul","points");
+    t.exam_points.forEach(p => ul.append(el("li",null,p)));
+    d.append(ul); b.append(d);
+  }
+  if(t.interview_answer){
+    const d = el("div","field speak");
+    d.append(el("span","fk","面试口语化答法 · 60–90 秒"), el("p","fv",t.interview_answer));
+    b.append(d);
+  }
+  const fs = t.facts_snapshot || {};
+  if(Object.keys(fs).length){
+    const d = el("div","field"); d.append(el("span","fk","数据快照"));
+    const tb = el("table","snap");
+    Object.entries(fs).forEach(([k,v])=>{
+      const tr = el("tr"); tr.append(el("td",null,k), el("td",null,String(v))); tb.append(tr);
+    });
+    d.append(tb); b.append(d);
+  }
+  (t.followups||[]).forEach(f => {
+    const d = el("div","qa"); const q = el("q",null,f.q);
+    d.append(q, el("p",null,f.a)); b.append(d);
+  });
+  if((t.related||[]).length){
+    const r = el("div","rel"); r.append(document.createTextNode("关联词："));
+    t.related.forEach((name,i)=>{
+      const hit = TERMS.find(x => x.term.includes(name) || (x.aliases||[]).includes(name));
+      if(hit){ const btn = el("button",null,name);
+        btn.onclick = () => { kw=""; $("#q").value=""; fTodo=false;
+          $("#fTodo").setAttribute("aria-pressed","false"); renderTerms(); open(hit.id); };
+        r.append(btn);
+      } else r.append(document.createTextNode(name));
+      if(i < t.related.length-1) r.append(document.createTextNode("、"));
+    });
+    b.append(r);
+  }
+  return b;
+}
+
+function open(id){
+  const node = document.getElementById("t-"+id);
+  if(!node) return;
+  const body = node.querySelector(".tbody");
+  if(body.hidden) node.querySelector(".thead").click();
+  node.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function renderTerms(){
+  const host = $("#termList"); host.textContent = "";
+  const list = TERMS.filter(matches);
+  if(!list.length){ host.append(el("p","empty","没有匹配的词条，换个筛选条件试试。")); return; }
+  CATS.forEach(cat => {
+    const items = list.filter(t => t.category===cat);
+    if(!items.length) return;
+    const g = el("section","tgroup");
+    g.append(el("h2",null,cat));
+    g.append(el("p","ghint", items.length + " 词 · 按热度排序"));
+    items.sort((a,b)=>b.heat-a.heat).forEach(t=>{
+      const row = el("article","term"); row.id = "t-"+t.id;
+      const head = el("button","thead");
+      head.append(el("span","tname",t.term), el("span","heat",stars(t.heat)),
+        el("span","tinst",(t.institutions||[]).join(" / ")));
+      const mk = el("button","mark", state.terms[t.id] ? "已掌握" : "标记");
+      mk.dataset.on = state.terms[t.id] ? "1" : "0";
+      mk.onclick = e => { e.stopPropagation();
+        if(state.terms[t.id]) delete state.terms[t.id]; else state.terms[t.id]=1;
+        mk.dataset.on = state.terms[t.id] ? "1":"0";
+        mk.textContent = state.terms[t.id] ? "已掌握":"标记";
+        save(); if(fTodo) renderTerms();
+      };
+      const body = termBody(t);
+      head.onclick = () => { body.hidden = !body.hidden; };
+      const wrapRow = el("div"); wrapRow.style.display="flex";
+      wrapRow.style.alignItems="center"; wrapRow.style.gap="10px";
+      wrapRow.append(head, mk);
+      row.append(wrapRow, body);
+      g.append(row);
+    });
+    host.append(g);
+  });
+}
+
+/* ---------------- 刷题 ---------------- */
+const BOARDS = [...new Set(QS.map(q=>q.board))];
+let fBoard = null, fWrong = false, deck = [], idx = 0;
+
+const SHORT = {"宏观与货币政策":"宏观货币","固定收益与债券市场":"固收债券",
+  "权益投资与估值":"权益估值","公募基金与资产管理":"公募资管",
+  "银行与信贷":"银行信贷","监管法规与职业素养":"监管合规"};
+BOARDS.forEach(b => $("#fBoard").append(chip(SHORT[b] || b, false, () => {
+  fBoard = (fBoard===b) ? null : b;
+  $("#fBoard").querySelectorAll(".chip").forEach((c,i) =>
+    c.setAttribute("aria-pressed", String(BOARDS[i]===fBoard)));
+  buildDeck();
+})));
+$("#fWrong").onclick = () => { fWrong = !fWrong;
+  $("#fWrong").setAttribute("aria-pressed", String(fWrong)); buildDeck(); };
+
+function buildDeck(){
+  deck = QS.filter(q => (!fBoard || q.board===fBoard) && (!fWrong || state.qs[q.id]==="x"));
+  idx = 0; renderQuiz();
+}
+
+function renderQuiz(){
+  const host = $("#quizHost"); host.textContent = "";
+  if(!deck.length){
+    host.append(el("p","empty", fWrong ? "错题本是空的 —— 先刷一轮，答错的题会自动进来。"
+      : "没有匹配的题目。"));
+    $("#qPos").textContent = "—"; $("#qBar").style.width = "0";
+    return;
+  }
+  if(idx >= deck.length) idx = 0;
+  const q = deck[idx];
+  $("#qPos").textContent = (idx+1) + " / " + deck.length;
+  $("#qBar").style.width = ((idx+1)/deck.length*100) + "%";
+  const done = Object.keys(state.qs).length;
+  const ok = Object.values(state.qs).filter(v=>v==="o").length;
+  $("#qAcc").textContent = done ? ("已答 " + done + " · 掌握 " + ok) : "";
+
+  const c = el("article","card");
+  const meta = el("div","qmeta");
+  meta.append(el("span","qid",q.id), el("span",null,q.board),
+    el("span",null,"难度 " + "●".repeat(q.difficulty)),
+    el("span",null,(q.institutions||[]).join(" / ")));
+  c.append(meta, el("h2","qtext",q.question));
+
+  if((q.options||[]).length){
+    const ul = el("ul","opts");
+    q.options.forEach(o => { const li = el("li",null,o);
+      li.dataset.letter = o.trim()[0]; ul.append(li); });
+    c.append(ul);
+  }
+
+  const ans = el("div","answer"); ans.hidden = true;
+  const fld = (k,v,cls) => { if(!v) return; const d=el("div", cls||"field");
+    d.append(el("span","fk",k), el("p","fv",v)); ans.append(d); };
+  if((q.correct||[]).length) fld("正确选项", q.correct.join("、"));
+  fld("考点", q.exam_point);
+  fld("标准答案", q.answer);
+  fld("面试口语化表达", q.spoken, "field speak");
+  (q.followups||[]).forEach(f => { const d = el("div","qa");
+    d.append(el("q",null,f.q), el("p",null,f.a)); ans.append(d); });
+  c.append(ans);
+
+  const acts = el("div","acts");
+  const reveal = el("button","btn btn-primary","显示答案");
+  reveal.onclick = () => {
+    ans.hidden = false; reveal.remove();
+    c.querySelectorAll(".opts li").forEach(li => {
+      if((q.correct||[]).includes(li.dataset.letter)) li.dataset.ok = "1";
+    });
+    acts.prepend(gotIt, again);
+  };
+  const gotIt = el("button","btn btn-jade","会了");
+  gotIt.onclick = () => { state.qs[q.id]="o"; save(); next(); };
+  const again = el("button","btn","再来一次");
+  again.onclick = () => { state.qs[q.id]="x"; save(); next(); };
+  const skip = el("button","btn","跳过 →");
+  skip.onclick = next;
+  acts.append(reveal, skip);
+  c.append(acts);
+  host.append(c);
+}
+function next(){ idx++; if(idx>=deck.length) idx=0; renderQuiz(); window.scrollTo({top:0,behavior:"smooth"}); }
+
+/* ---------------- 时间线 ---------------- */
+function renderTL(){
+  const host = $("#tlHost");
+  TL.forEach(era => {
+    const s = el("section","era");
+    const h = el("div","era-head");
+    h.append(el("b",null,era.y), el("em",null,era.tag), el("span",null,era.h));
+    const body = el("div","era-body");
+    era.ev.forEach(e => {
+      const d = el("div","ev"); d.dataset.line = e.line;
+      const p = el("p"); p.style.margin = "0";
+      p.append(el("span","when",e.d), el("span","what",e.t), el("span","why",e.w));
+      d.append(p); body.append(d);
+    });
+    s.append(h, body);
+    host.append(s);
+  });
+}
+
+/* ---------------- 计数 ---------------- */
+function renderCounts(){
+  $("#nTerms").textContent = TERMS.length;
+  $("#nQs").textContent = QS.length;
+  $("#nDone").textContent = Object.keys(state.terms).length +
+    Object.values(state.qs).filter(v=>v==="o").length;
+}
+
+renderTerms(); buildDeck(); renderTL(); renderCounts();
+</script>
