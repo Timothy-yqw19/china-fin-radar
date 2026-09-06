@@ -1,0 +1,53 @@
+# 可选：用配置扩展 HTML 列表型数据源，无需写代码
+# 加载方式见 finradar/crawlers/official.py::ConfigListCrawler
+#
+# 怎么找 selector：
+#   1) 浏览器打开列表页 → 右键"检查" → 找到包裹每条新闻的元素（通常是 li 或 tr）
+#   2) item_selector 填那个元素，link_selector 填其中的 <a>
+#   3) 跑 `finradar doctor` 验证
+
+sources:
+
+  - id: mof
+    name: 财政部
+    kind: official
+    base_score: 65
+    homepage: https://www.mof.gov.cn/
+    pages:
+      - url: https://www.mof.gov.cn/zhengwuxinxi/caizhengxinwen/
+        channel: 财政新闻
+        item_selector: "li"
+        link_selector: "a[href]"
+
+  - id: ndrc
+    name: 国家发展改革委
+    kind: official
+    base_score: 60
+    homepage: https://www.ndrc.gov.cn/
+    pages:
+      - url: https://www.ndrc.gov.cn/xxgk/zcfb/index.html
+        channel: 政策发布
+        item_selector: "li"
+        link_selector: "a[href]"
+
+  - id: stats
+    name: 国家统计局
+    kind: official
+    base_score: 55
+    homepage: https://www.stats.gov.cn/
+    pages:
+      - url: https://www.stats.gov.cn/sj/zxfb/
+        channel: 最新发布
+        item_selector: "li"
+        link_selector: "a[href]"
+
+  - id: sse
+    name: 上海证券交易所
+    kind: official
+    base_score: 60
+    homepage: https://www.sse.com.cn/
+    pages:
+      - url: https://www.sse.com.cn/lawandrules/sselawsrules/
+        channel: 业务规则
+        item_selector: "li"
+        link_selector: "a[href]"

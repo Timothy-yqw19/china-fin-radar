@@ -1,0 +1,7 @@
+requests>=2.31
+beautifulsoup4>=4.12
+PyYAML>=6.0
+lxml>=4.9
+# 可选：宏观数据与快讯兜底通道
+akshare>=1.16
+pandas>=2.0

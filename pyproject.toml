@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finradar"
+version = "0.1.0"
+description = "中国金融政策雷达 + 券商/公募/银行秋招金融知识库"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "PyYAML>=6.0",
+    "lxml>=4.9",
+]
+
+[project.optional-dependencies]
+data = ["akshare>=1.16", "pandas>=2.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+finradar = "finradar.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["finradar*"]
+
+[tool.setuptools.package-data]
+finradar = ["data/**/*.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
