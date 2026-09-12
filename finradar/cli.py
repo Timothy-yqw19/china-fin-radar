@@ -23,7 +23,7 @@ from . import __version__
 from .analysis import (
     annotate, combined_hotwords, dedupe_rows, discover_new_words, glossary_trend, write_report,
 )
-from .crawlers import build_all, registry
+from .crawlers import build_all, config_source_ids, registry
 from .knowledge import glossary as G
 from .knowledge import qbank as Q
 from .knowledge import quiz as QZ
@@ -312,7 +312,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = net(sub.add_parser("crawl", help="抓取新闻/政策"))
     s.add_argument(
         "--source", nargs="*", default=["official", "flash"],
-        help="official / flash / all 或具体 id: " + " ".join(registry()),
+        help="official / flash / config / all，或具体 id: "
+        + " ".join([*registry(), *config_source_ids()]),
     )
     s.add_argument("--pages", type=int, default=1)
     s.add_argument("--min-score", type=float, default=0.0, help="只保留政策分≥该值的条目")
