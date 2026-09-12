@@ -3,13 +3,80 @@
 from __future__ import annotations
 
 import html
+import re
 
-from datetime import datetime
-
-from ..utils import workdir
+from ..utils import now_cn, workdir
 from .hotwords import combined_hotwords
 
 BOARD_ORDER = ["政策动作", "货币政策", "资本市场", "银行保险", "对外开放", "主题热词", "发文主体"]
+
+_PUNCT = re.compile(r"[\s　·、，,。.；;：:！!？?“”\"'（）()《》〈〉\[\]【】\-—_/\\|]+")
+# 公文标题里的"包装词": 同一份文件被不同站点转载时, 常常只差这些词
+_PACKAGING = ("关于印发", "关于做好", "关于", "印发", "的通知", "通知", "的公告", "公告",
+              "的批复", "批复", "发布", "出台")
+
+
+def _norm_title(title: str) -> str:
+    return _PUNCT.sub("", title or "")
+
+
+def _core_title(title: str) -> str:
+    s = _norm_title(title)
+    for w in _PACKAGING:
+        s = s.replace(w, "")
+    return s
+
+
+def dedupe_rows(rows: list[dict]) -> list[dict]:
+    """把"同一件事被多个源抓到"的条目合并成一条.
+
+    实测里同一个文件常常同时出现在 政府网政策库 / 财政部 / 财联社, 标题还会
+    略有差异(带不带"关于印发…的通知"), 所以除了完全相同, 还做一次包含式匹配;
+    合并后保留政策分最高的一条, 并记下其他来源。
+    """
+    kept: list[dict] = []
+    index: list[str] = []
+    cores: list[str] = []
+    doc_index: dict[str, int] = {}
+    for r in sorted(rows, key=lambda x: -float(x.get("policy_score") or 0)):
+        norm = _norm_title(r.get("title") or "")
+        if not norm:
+            continue
+        core = _core_title(r.get("title") or "")
+        # 同一份文件被两个源转载时, 文号是最可靠的合并依据
+        doc_no = (r.get("doc_no") or "").strip()
+        dup_at = None
+        if doc_no and doc_no in doc_index:
+            dup_at = doc_index[doc_no]
+        for i, k in enumerate(index):
+            if dup_at is not None:
+                break
+            if norm == k:
+                dup_at = i
+                break
+            # 去掉"关于印发…的通知"这类包装词后再比: 标题重复才算同一件事,
+            # 但数字必须完全一致 —— "公告第178号"和"第177号"不是一条。
+            ck = cores[i]
+            short, long_ = (core, ck) if len(core) <= len(ck) else (ck, core)
+            if len(short) >= 12 and short in long_:
+                dup_at = i
+                break
+        if dup_at is None:
+            r = dict(r)
+            r["also_from"] = []
+            index.append(norm)
+            cores.append(core)
+            kept.append(r)
+            if doc_no:
+                doc_index[doc_no] = len(kept) - 1
+        else:
+            host = kept[dup_at]
+            src = r.get("source_name") or r.get("source") or ""
+            if src and src != (host.get("source_name") or host.get("source")):
+                host.setdefault("also_from", [])
+                if src not in host["also_from"]:
+                    host["also_from"].append(src)
+    return kept
 
 
 def _group(rows: list[dict]) -> dict[str, list[dict]]:
@@ -22,9 +89,14 @@ def _group(rows: list[dict]) -> dict[str, list[dict]]:
 
 
 def build_markdown(rows: list[dict], title: str = "金融政策日报", top_hot: int = 15) -> str:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_cn().strftime("%Y-%m-%d %H:%M")
+    raw_n = len(rows)
+    rows = dedupe_rows(rows)
     hot = combined_hotwords(rows)
-    lines = [f"# {title}", "", f"> 生成时间 {now} · 共 {len(rows)} 条", ""]
+    sub = f"> 生成时间 {now}（北京时间） · 共 {len(rows)} 条"
+    if raw_n != len(rows):
+        sub += f"（已合并 {raw_n - len(rows)} 条跨源重复）"
+    lines = [f"# {title}", "", sub, ""]
 
     if hot:
         lines += ["## 一、热词榜", ""]
@@ -51,6 +123,8 @@ def build_markdown(rows: list[dict], title: str = "金融政策日报", top_hot:
             if r.get("doc_no"):
                 meta += f" · {r['doc_no']}"
             lines.append(meta)
+            if r.get("also_from"):
+                lines.append(f"  - 同源报道：{'、'.join(r['also_from'])}")
             if r.get("hotwords"):
                 lines.append(f"  - 命中热词：{'、'.join(r['hotwords'][:8])}")
             if r.get("impact"):
@@ -91,13 +165,15 @@ h3{{font-size:15px;margin:22px 0 10px;color:var(--acc)}}
 .imp{{font-size:12.5px;margin-top:6px;padding-left:9px;border-left:2px solid var(--acc);color:var(--mut)}}
 .score{{float:right;font-size:12px;color:var(--acc);font-weight:700}}
 </style></head><body><div class="wrap">
-<h1>{title}</h1><div class="sub">生成时间 {now} · 共 {n} 条</div>
+<h1>{title}</h1><div class="sub">{now}</div>
 {body}
 </div></body></html>"""
 
 
 def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_cn().strftime("%Y-%m-%d %H:%M")
+    raw_n = len(rows)
+    rows = dedupe_rows(rows)
     hot = combined_hotwords(rows)
     parts = []
     if hot:
@@ -116,6 +192,8 @@ def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
             meta = f"{(r.get('pub_date') or '')[:10]} · {html.escape(r.get('source_name') or '')}"
             if r.get("doc_no"):
                 meta += " · " + html.escape(str(r["doc_no"]))
+            if r.get("also_from"):
+                meta += " · 亦见：" + html.escape("、".join(r["also_from"]))
             if r.get("hotwords"):
                 meta += " · " + html.escape("、".join(r["hotwords"][:6]))
             imp = (
@@ -125,13 +203,16 @@ def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
                 f"<div class='item'><span class='score'>{r.get('policy_score')}</span>"
                 f"{title_html}<div class='meta'>{meta}</div>{imp}</div>"
             )
-    return HTML_TPL.format(title=html.escape(title), now=now, n=len(rows), body="".join(parts))
+    sub = f"生成时间 {now}（北京时间） · 共 {len(rows)} 条"
+    if raw_n != len(rows):
+        sub += f"（已合并 {raw_n - len(rows)} 条跨源重复）"
+    return HTML_TPL.format(title=html.escape(title), now=sub, n=len(rows), body="".join(parts))
 
 
 def write_report(rows: list[dict], title: str = "金融政策日报", stem: str | None = None) -> dict:
     out = workdir() / "reports"
     out.mkdir(parents=True, exist_ok=True)
-    stem = stem or f"report_{datetime.now():%Y%m%d}"
+    stem = stem or f"report_{now_cn():%Y%m%d}"
     md_path = out / f"{stem}.md"
     html_path = out / f"{stem}.html"
     md_path.write_text(build_markdown(rows, title), encoding="utf-8")

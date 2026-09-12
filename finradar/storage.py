@@ -107,6 +107,27 @@ class Store:
                 (source, int(ok), n, message[:500], datetime.now().isoformat(timespec="seconds")),
             )
 
+    def update_analysis(self, items: Iterable[NewsItem]) -> int:
+        """按 uid 就地更新打分/标签/热词/传导逻辑 (改完 keywords.yaml 后重算用)."""
+        rows = [
+            (
+                json.dumps(it.tags, ensure_ascii=False),
+                json.dumps(it.hotwords, ensure_ascii=False),
+                it.policy_score,
+                it.impact,
+                it.uid,
+            )
+            for it in items
+        ]
+        if not rows:
+            return 0
+        with self._conn() as c:
+            c.executemany(
+                "UPDATE news SET tags=?, hotwords=?, policy_score=?, impact=? WHERE uid=?",
+                rows,
+            )
+        return len(rows)
+
     # ------------------------------------------------------------ 查询
     def query(
         self,

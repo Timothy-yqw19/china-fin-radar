@@ -1,53 +1,102 @@
-# 可选：用配置扩展 HTML 列表型数据源，无需写代码
+# 用配置扩展 HTML 列表型数据源，无需写代码
 # 加载方式见 finradar/crawlers/official.py::ConfigListCrawler
 #
-# 怎么找 selector：
-#   1) 浏览器打开列表页 → 右键"检查" → 找到包裹每条新闻的元素（通常是 li 或 tr）
+# 下面每个源都在 2026-09-12 用 `finradar doctor` 在真实网络下验证过。
+#
+# 怎么自己加一个：
+#   1) 浏览器打开列表页 → 右键"检查" → 找到包裹每条内容的元素（通常是 li 或 tr）
 #   2) item_selector 填那个元素，link_selector 填其中的 <a>
-#   3) 跑 `finradar doctor` 验证
+#   3) 导航菜单也常是 li，记得打开 require_date: true —— 没有日期的条目会被丢掉
+#   4) 跑 `finradar doctor` 验证
+#
+# 可选字段：
+#   container_selector   先圈定正文区域再找 item，避免命中导航
+#   require_date: true   丢弃没有日期的条目（政务站建议都开）
+#   min_title_len        标题最短长度，默认 8
+#   page_pattern         翻页模板（含 {n}）；page_start 表示首个 URL 对应的页码
 
 sources:
 
   - id: mof
     name: 财政部
     kind: official
-    base_score: 65
+    base_score: 30
     homepage: https://www.mof.gov.cn/
     pages:
       - url: https://www.mof.gov.cn/zhengwuxinxi/caizhengxinwen/
         channel: 财政新闻
         item_selector: "li"
         link_selector: "a[href]"
+        require_date: true
+        page_pattern: "https://www.mof.gov.cn/zhengwuxinxi/caizhengxinwen/index_{n}.htm"
+        page_start: 0
 
   - id: ndrc
     name: 国家发展改革委
     kind: official
-    base_score: 60
+    base_score: 25
     homepage: https://www.ndrc.gov.cn/
     pages:
-      - url: https://www.ndrc.gov.cn/xxgk/zcfb/index.html
-        channel: 政策发布
+      # 旧地址 /xxgk/zcfb/index.html 现在是 JS 跳转（返回 54 字节），直接用子栏目
+      - url: https://www.ndrc.gov.cn/xxgk/zcfb/tz/
+        channel: 发改委·通知
         item_selector: "li"
         link_selector: "a[href]"
+        require_date: true
+        page_pattern: "https://www.ndrc.gov.cn/xxgk/zcfb/tz/index_{n}.html"
+        page_start: 0
+      - url: https://www.ndrc.gov.cn/xxgk/zcfb/fzggwl/
+        channel: 发改委·委令
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
 
   - id: stats
     name: 国家统计局
     kind: official
-    base_score: 55
+    base_score: 25
     homepage: https://www.stats.gov.cn/
     pages:
       - url: https://www.stats.gov.cn/sj/zxfb/
-        channel: 最新发布
-        item_selector: "li"
+        channel: 数据发布
+        item_selector: ".list-content li"
         link_selector: "a[href]"
+        require_date: true
+        page_pattern: "https://www.stats.gov.cn/sj/zxfb/index_{n}.html"
+        page_start: 0
 
-  - id: sse
-    name: 上海证券交易所
+  - id: amac
+    name: 中国证券投资基金业协会
     kind: official
-    base_score: 60
-    homepage: https://www.sse.com.cn/
+    base_score: 25
+    homepage: https://www.amac.org.cn/
     pages:
-      - url: https://www.sse.com.cn/lawandrules/sselawsrules/
-        channel: 业务规则
+      # 公募方向重点看这里：新规、备案指引、自律规则都在通知公告里
+      - url: https://www.amac.org.cn/xwfb/tzgg/
+        channel: 基金业协会·通知公告
         item_selector: "li"
         link_selector: "a[href]"
+        container_selector: "div.content-right"
+        require_date: true
+        page_pattern: "https://www.amac.org.cn/xwfb/tzgg/index_{n}.html"
+        page_start: 0
+      - url: https://www.amac.org.cn/xwfb/xhyw/
+        channel: 基金业协会·要闻
+        item_selector: "li"
+        link_selector: "a[href]"
+        container_selector: "div.content-right"
+        require_date: true
+
+  # 交易所暂未接入：上交所 /lawandrules/ 与深交所 /lawrules/ 的列表都是 JS 渲染的
+  # （HTML 骨架里没有数据），要抓得用 headless browser 或它们的内网 JSON 接口。
+  # - id: sse
+  #   name: 上海证券交易所
+  #   kind: official
+  #   base_score: 25
+  #   homepage: https://www.sse.com.cn/
+  #   pages:
+  #     - url: https://www.sse.com.cn/lawandrules/sselawsrules/latest/
+  #       channel: 业务规则
+  #       item_selector: "li"
+  #       link_selector: "a[href]"
+  #       require_date: true

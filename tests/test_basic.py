@@ -135,3 +135,125 @@ def test_report_renders():
     md = build_markdown(rows)
     html = build_html(rows)
     assert "降准" in md and "<html" in html
+
+
+# ---------------------------------------------------------------- 2026-09-12 实测修正
+
+def test_routine_news_scores_below_policy():
+    """例行会见/座谈有来源分撑着, 但不能和正式发文一个量级。"""
+    routine = NewsItem(
+        source="pbc", source_name="中国人民银行",
+        title="中国人民银行副行长会见标普全球总裁",
+    )
+    routine.policy_score = 28.0  # 来源先验分, 相当于爬虫跑完的状态
+    score_and_tag(routine)
+    policy = NewsItem(
+        source="gov", source_name="政府网",
+        title="国务院办公厅关于做好金融“五篇大文章”的指导意见",
+    )
+    policy.policy_score = 30.0
+    score_and_tag(policy)
+    assert routine.policy_score < 55, f"例行新闻分过高: {routine.policy_score}"
+    assert policy.policy_score > routine.policy_score
+    assert policy.policy_score >= 75
+    # 负向类别的命中词不该混进热词/标签
+    assert not {"会见", "涨停", "午评"} & set(routine.hotwords)
+
+
+def test_source_priors_stay_low():
+    """来源先验分只作为下限: 官方站 70-80 分的老口径会让日报失去区分度。"""
+    from finradar.crawlers import registry, source_base_score
+
+    for sid in registry():
+        assert source_base_score(sid) <= 30, f"{sid} 来源先验分过高"
+
+
+def test_dedupe_merges_cross_source():
+    from finradar.analysis.report import dedupe_rows
+
+    rows = [
+        {
+            "title": "关于印发《关于加快农业保险高质量发展的实施方案》的通知",
+            "source_name": "中国政府网·政策文件库", "policy_score": 85.0,
+            "doc_no": "财金〔2026〕88号", "tags": [], "hotwords": [],
+        },
+        {
+            "title": "《关于加快农业保险高质量发展的实施方案》印发",
+            "source_name": "财政部", "policy_score": 57.0, "doc_no": "",
+            "tags": [], "hotwords": [],
+        },
+        {
+            "title": "证监会就修订《管理办法》公开征求意见",
+            "source_name": "中国证券监督管理委员会", "policy_score": 90.0,
+            "doc_no": "", "tags": [], "hotwords": [],
+        },
+        {
+            "title": "证监会就修订《管理办法》公开征求意见",
+            "source_name": "财联社·电报", "policy_score": 62.0, "doc_no": "",
+            "tags": [], "hotwords": [],
+        },
+    ]
+    out = dedupe_rows(rows)
+    assert len(out) == 2
+    top = out[0]
+    assert top["source_name"] == "中国证券监督管理委员会"
+    assert "财联社·电报" in top["also_from"]
+
+
+def test_macro_latest_rows_ordering():
+    """akshare 各接口排序方向不一致: 取最新几行不能无脑 head/tail。"""
+    pd = pytest.importorskip("pandas")
+    from finradar.crawlers.ak_source import latest_rows
+
+    newest_first = pd.DataFrame(
+        {"月份": ["2026年08月", "2026年07月", "2026年06月"], "值": [1, 2, 3]}
+    )
+    oldest_first = pd.DataFrame(
+        {"TRADE_DATE": ["1991-04-21", "2026-07-20", "2026-08-20"], "值": [1, 2, 3]}
+    )
+    assert list(latest_rows(newest_first, 2)["月份"]) == ["2026年08月", "2026年07月"]
+    assert list(latest_rows(oldest_first, 1)["TRADE_DATE"]) == ["2026-08-20"]
+    # 形如 201501 的月份串
+    compact = pd.DataFrame({"月份": [201501, 202608, 202512], "值": [1, 2, 3]})
+    assert list(latest_rows(compact, 1)["月份"]) == [202608]
+
+
+def test_dates_follow_beijing_time():
+    """境内站点按北京时间发布: 用本机时区(可能是纽约)会凭空差一天。"""
+    from finradar.utils import CN_TZ, days_ago, now_cn, parse_time
+
+    assert CN_TZ.utcoffset(None).total_seconds() == 8 * 3600
+    now = now_cn()
+    assert now.utcoffset().total_seconds() == 8 * 3600
+    # 秒级时间戳按北京时间解释
+    assert parse_time(1789000000).startswith("2026-09")
+    assert len(days_ago(3)) == 10
+
+
+def test_config_sources_are_wired_up():
+    """回归: config/sources.yaml 曾经是死配置, ConfigListCrawler 从未被实例化。"""
+    from finradar.crawlers import build_all, config_source_ids
+
+    ids = config_source_ids()
+    assert ids, "sources.yaml 没有读到任何数据源"
+    built = {c.source_id for c in build_all(["all"], pages=1)}
+    assert set(ids) <= built, f"配置源没有进 build_all: {set(ids) - built}"
+    assert {"mof", "ndrc", "stats", "amac"} <= built
+
+
+def test_discover_new_words_filters_noise():
+    from finradar.analysis.hotwords import discover_new_words
+
+    texts = [
+        "当地时间9月10日下午，央行开展买断式逆回购操作维护流动性",
+        "本次买断式逆回购操作规模为1400亿元，期限三个月",
+        "市场关注买断式逆回购操作力度，资金面整体平稳",
+        "机构认为买断式逆回购操作节奏将影响短端利率",
+        "公开市场业务交易公告显示，买断式逆回购操作延续净投放",
+        "央行公告称买断式逆回购操作延续，投放中长期流动性",
+    ]
+    words = dict(discover_new_words(texts, top=20, min_len=3, min_count=2))
+    assert "买断式逆回购操作" in words
+    # 碎片(更长的词几乎同样常见时会顶掉短的)、日期碎片、单位都不该出现
+    for junk in ("式逆回购", "回购操作", "日下午", "日报道", "亿元", "1500"):
+        assert junk not in words, f"碎片词混进去了: {junk}"

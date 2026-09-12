@@ -21,7 +21,7 @@ import sys
 
 from . import __version__
 from .analysis import (
-    annotate, combined_hotwords, discover_new_words, glossary_trend, write_report,
+    annotate, combined_hotwords, dedupe_rows, discover_new_words, glossary_trend, write_report,
 )
 from .crawlers import build_all, registry
 from .knowledge import glossary as G
@@ -91,6 +91,43 @@ def cmd_doctor(a: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- 报告
 
+def cmd_rescore(a: argparse.Namespace) -> int:
+    """改完 config/keywords.yaml 后, 把库里已有条目重新打一遍分 (不用重抓)."""
+    from .crawlers import source_base_score
+    from .models import NewsItem
+
+    store = Store(a.db)
+    rows = store.query(limit=10**7)
+    if not rows:
+        print("库里没数据，先跑 `finradar crawl`。")
+        return 1
+    items = [
+        NewsItem(
+            source=r.get("source") or "",
+            source_name=r.get("source_name") or "",
+            title=r.get("title") or "",
+            url=r.get("url") or "",
+            published_at=r.get("published_at") or "",
+            summary=r.get("summary") or "",
+            channel=r.get("channel") or "",
+            doc_no=r.get("doc_no") or "",
+        )
+        for r in rows
+    ]
+    items = annotate(items)
+    for it in items:  # 还原来源先验分下限
+        it.policy_score = max(it.policy_score, source_base_score(it.source))
+    n = store.update_analysis(items)
+    dist: dict[int, int] = {}
+    for it in items:
+        b = int(it.policy_score // 10) * 10
+        dist[b] = dist.get(b, 0) + 1
+    print(f"已重算 {n} 条。分数分布：")
+    for b in sorted(dist, reverse=True):
+        print(f"  {b:>3}-{b + 9:<3}{dist[b]:>6} 条")
+    return 0
+
+
 def cmd_report(a: argparse.Namespace) -> int:
     store = Store(a.db)
     rows = store.query(
@@ -126,9 +163,13 @@ def cmd_hot(a: argparse.Namespace) -> int:
     if not rows:
         print("库里没数据，先跑 `finradar crawl`。")
         return 1
+    # 同一件事被多个源抓到会让词频虚高, 先合并再统计
+    raw_n = len(rows)
+    rows = dedupe_rows(rows)
     texts = [f"{r.get('title','')} {r.get('summary','')}" for r in rows]
     cnt = combined_hotwords(rows)
-    print(f"\n=== 热词榜（近 {a.days} 天，{len(rows)} 条新闻，合并口径）===")
+    extra = f"，已合并 {raw_n - len(rows)} 条跨源重复" if raw_n != len(rows) else ""
+    print(f"\n=== 热词榜（近 {a.days} 天，{len(rows)} 条新闻，合并口径{extra}）===")
     for i, (w, n) in enumerate(cnt.most_common(a.top), 1):
         t = G.get(w)
         heat = "★" * (t.heat if t else 0)
@@ -222,7 +263,9 @@ def cmd_facts(a: argparse.Namespace) -> int:
         print("没拿到数据。请先 `pip install akshare`，并确认网络可达。")
         return 1
     for k, v in data.items():
-        print(f"\n=== {v['label']} ({k}) ===")
+        as_of = v.get("as_of") or ""
+        head = f"\n=== {v['label']} ({k})" + (f" · 最新 {as_of}" if as_of else "") + " ==="
+        print(head)
         print(v["df"].to_string(index=False))
     return 0
 
@@ -238,7 +281,10 @@ def cmd_export(a: argparse.Namespace) -> int:
     else:
         data = [q.to_dict() for q in Q.load_questions()]
         p = out / "questions.json"
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    # YAML 里形如 2026-06-30 的值会被解析成 date 对象, 需要 default=str 兜底
+    p.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
     print(f"已导出 {len(data)} 条 → {p}")
     return 0
 
@@ -288,6 +334,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("stats", help="库存与刷题统计")
     s.set_defaults(func=cmd_stats)
 
+    s = sub.add_parser("rescore", help="改完打分规则后重算库里已有条目")
+    s.set_defaults(func=cmd_rescore)
+
     s = sub.add_parser("hot", help="热词榜 / 趋势 / 新词发现")
     s.add_argument("--days", type=int, default=30)
     s.add_argument("--min-score", type=float, default=0.0)
@@ -327,8 +376,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--type", default=None, choices=["single", "multi", "short", "case"])
     s.set_defaults(func=cmd_show)
 
-    s = sub.add_parser("facts", help="拉取最新宏观数据 (LPR/M2/CPI/国债收益率…)")
-    s.add_argument("--keys", nargs="*", default=None)
+    s = sub.add_parser("facts", help="拉取最新宏观数据 (LPR/M2/CPI/社融/国债收益率…)")
+    s.add_argument(
+        "--keys", nargs="*", default=None,
+        help="默认全部: lpr money_supply cpi ppi gdp pmi shibor shrzgm credit "
+        "leverage bond_rate bond_curve",
+    )
     s.add_argument("--tail", type=int, default=8)
     s.set_defaults(func=cmd_facts)
 

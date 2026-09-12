@@ -3,20 +3,66 @@
 优先使用各站点自身的 JSON 接口 (稳定、结构化), HTML 解析作为兜底。
 接口结构随时可能调整, 用 `finradar doctor` 逐源体检。
 
-已验证可用的 JSON 接口:
+接口清单 (2026-09-12 在真实网络下逐个实测通过):
   * 国家金融监督管理总局 nfra.gov.cn
       /cbircweb/DocInfo/SelectDocByItemIdAndChild?itemId=<栏目>&pageSize=&pageIndex=
   * 中国证监会 csrc.gov.cn
       /searchList/<channelId>?_isAgg=true&_isJson=true&_pageSize=&page=
   * 中国政府网 sousuo.www.gov.cn
       /search-gov/data?t=zhengcelibrary&q=<关键词>&...   (政策文件库)
+      注意: 结果挂在 searchVO.catMap 下, 旧版曾直接挂 catMap, 两种都兼容
+  * 中国人民银行 pbc.gov.cn —— HTML 表格, 列表项是 a[istitle="true"] + span.hui12 日期
+  * 国家外汇管理局 safe.gov.cn —— HTML <li><dt><a>标题</a></dt><dd>日期</dd></li>
 """
 
 from __future__ import annotations
 
+import re
+
 from ..models import NewsItem
 from ..utils import LOG, abs_url, parse_time
 from .base import BaseCrawler, register
+
+DATE_RE = re.compile(r"(20\d{2})[-./年](\d{1,2})[-./月](\d{1,2})")
+# href 里常嵌日期: /202609/t20260909_1965263.html、/2026091115515046822/index.html
+HREF_DATE_RE = re.compile(r"(20\d{2})(\d{2})(\d{2})")
+# 部分站点的列表只给 MM-DD (年份靠当前时间推断)
+MD_RE = re.compile(r"(?<!\d)(\d{1,2})[-./月](\d{1,2})(?!\d)")
+# 列表把日期写在 <a> 内部(如 <i>09-02</i>), 取文本会把日期粘在标题尾部
+TAIL_DATE_RE = re.compile(r"(?:20\d{2}[-./年])?\d{1,2}[-./月]\d{1,2}日?$")
+
+
+def strip_trailing_date(title: str) -> str:
+    """去掉粘在标题尾巴上的日期, 如 '协会举办培训09-02' → '协会举办培训'."""
+    return TAIL_DATE_RE.sub("", title or "").strip()
+
+
+def extract_date(text: str, href: str = "") -> str:
+    """尽力还原发布日期: 文本完整日期 → href 内嵌 YYYYMMDD → 文本 MM-DD (推断年份)."""
+    t = text or ""
+    m = DATE_RE.search(t)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    hm = HREF_DATE_RE.search(href or "")
+    if hm:
+        y, mo, d = int(hm.group(1)), int(hm.group(2)), int(hm.group(3))
+        if 2000 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y}-{mo:02d}-{d:02d}"
+    md = MD_RE.search(t)
+    if md:
+        from datetime import date, timedelta
+
+        mo, d = int(md.group(1)), int(md.group(2))
+        today = date.today()
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            try:
+                cand = date(today.year, mo, d)
+            except ValueError:
+                return ""
+            if (cand - today).days > 31:  # 明显在未来 → 属于上一年
+                cand = cand - timedelta(days=365)
+            return cand.isoformat()
+    return ""
 
 # ---------------------------------------------------------------- 金融监管总局
 
@@ -29,7 +75,7 @@ class NFRACrawler(BaseCrawler):
     source_name = "国家金融监督管理总局"
     kind = "official"
     homepage = "https://www.nfra.gov.cn/"
-    base_score = 70.0
+    base_score = 28.0
 
     API = "https://www.nfra.gov.cn/cbircweb/DocInfo/SelectDocByItemIdAndChild"
     DETAIL = "https://www.nfra.gov.cn/cn/view/pages/ItemDetail.html?docId={doc_id}&itemId={item_id}"
@@ -77,7 +123,7 @@ class CSRCCrawler(BaseCrawler):
     source_name = "中国证券监督管理委员会"
     kind = "official"
     homepage = "https://www.csrc.gov.cn/"
-    base_score = 70.0
+    base_score = 28.0
 
     API = "https://www.csrc.gov.cn/searchList/{channel_id}"
     CHANNELS = {
@@ -133,48 +179,63 @@ class GovPolicyCrawler(BaseCrawler):
     source_name = "中国政府网·政策文件库"
     kind = "official"
     homepage = "https://www.gov.cn/zhengce/"
-    base_score = 75.0
+    base_score = 30.0
 
     API = "https://sousuo.www.gov.cn/search-gov/data"
     QUERIES = ["金融", "货币政策", "资本市场", "银行", "保险", "债券", "基金"]
+
+    @staticmethod
+    def _cat_map(data: dict | None) -> dict:
+        """政策库返回体里, 结果可能在 searchVO.catMap 或顶层 catMap."""
+        if not isinstance(data, dict):
+            return {}
+        sv = data.get("searchVO") or {}
+        return sv.get("catMap") or data.get("catMap") or {}
 
     def fetch(self) -> list[NewsItem]:
         out: list[NewsItem] = []
         seen: set[str] = set()
         for q in self.QUERIES:
-            data = self.f.get_json(
-                self.API,
-                params={
-                    "t": "zhengcelibrary",
-                    "q": q,
-                    "p": 1,
-                    "n": 20,
-                    "sort": "pubtime",
-                    "sortType": 1,
-                    "searchfield": "title",
-                    "timetype": "timezd",
-                },
-                referer=self.homepage,
-            )
-            cat = ((data or {}).get("catMap") or {})
-            for _, block in cat.items():
-                for r in (block or {}).get("listVO") or []:
-                    url = r.get("url") or ""
-                    if not url or url in seen:
-                        continue
-                    seen.add(url)
-                    out.append(
-                        self.item(
-                            title=r.get("title") or "",
-                            url=url,
-                            published_at=parse_time(
-                                (r.get("pubtimeStr") or "").replace(".", "-")
-                            ),
-                            summary=(r.get("summary") or "")[:300],
-                            channel=r.get("childtype") or "政策文件",
-                            doc_no=r.get("pcode") or r.get("wenhao") or "",
+            for page in range(1, self.pages + 1):
+                data = self.f.get_json(
+                    self.API,
+                    params={
+                        "t": "zhengcelibrary",
+                        "q": q,
+                        "p": page,
+                        "n": 20,
+                        "sort": "pubtime",
+                        "sortType": 1,
+                        "searchfield": "title",
+                        "timetype": "timezd",
+                    },
+                    referer=self.homepage,
+                )
+                cat = self._cat_map(data)
+                before = len(out)
+                for _, block in cat.items():
+                    for r in (block or {}).get("listVO") or []:
+                        url = r.get("url") or ""
+                        if not url or url in seen:
+                            continue
+                        seen.add(url)
+                        puborg = (r.get("puborg") or "").strip()
+                        out.append(
+                            self.item(
+                                title=r.get("title") or "",
+                                url=url,
+                                published_at=parse_time(
+                                    (r.get("pubtimeStr") or "").replace(".", "-")
+                                ),
+                                summary=(r.get("summary") or "")[:300],
+                                # 把发文机关放进 channel: 打分规则里的"发文主体"能命中,
+                                # 报告里也能直接看到是谁发的文
+                                channel=f"政策文件·{puborg}" if puborg else "政策文件",
+                                doc_no=r.get("pcode") or r.get("wenhao") or "",
+                            )
                         )
-                    )
+                if len(out) == before:  # 该页没有新内容, 不再翻页
+                    break
         return out
 
 
@@ -196,12 +257,17 @@ class PBCCrawler(BaseCrawler):
     source_name = "中国人民银行"
     kind = "official"
     homepage = "http://www.pbc.gov.cn/"
-    base_score = 80.0
+    base_score = 28.0
 
-    # 常用栏目 (index.html 列表页)
+    # 常用栏目 (index.html 列表页), 2026-09-12 实测均可访问
     CHANNELS = {
-        "http://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html": "新闻发布",
-        "http://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125440/index.html": "货币政策司",
+        "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/index.html": "新闻发布",
+        "https://www.pbc.gov.cn/tiaofasi/144941/index.html": "法律法规",
+        "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125440/index.html": "利率政策",
+        # 公开市场业务交易公告: 每天一篇, 面试问"今天央行做了什么"的标准答案
+        "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/index.html": (
+            "公开市场业务交易公告"
+        ),
     }
     GOV_FALLBACK = "https://sousuo.www.gov.cn/search-gov/data"
 
@@ -221,21 +287,22 @@ class PBCCrawler(BaseCrawler):
             if r is None:
                 continue
             soup = BeautifulSoup(r.text, "html.parser")
-            for a in soup.select("a[href]"):
-                href, title = a.get("href", ""), a.get_text(strip=True)
-                if len(title) < 8 or "index" in href:
+            # 央行列表页的正文链接统一带 istitle="true"; 兜底用"路径里 15 位以上数字 + /index.html"
+            anchors = soup.select('a[istitle="true"]')
+            if not anchors:
+                anchors = [
+                    a
+                    for a in soup.select('a[href$="/index.html"]')
+                    if re.search(r"/(?:20\d{2}|\d{10,})/index\.html$", a.get("href", ""))
+                ]
+            for a in anchors:
+                href = a.get("href", "")
+                # 列表标题会被截断成"…", 完整标题在 title 属性里
+                title = (a.get("title") or a.get_text(strip=True)).strip()
+                if len(title) < 6 or not href:
                     continue
-                if not any(k in href for k in (".html", ".htm")):
-                    continue
-                # 同级 td/li 里常带日期
-                date_txt = ""
-                parent = a.find_parent(["td", "li", "tr", "div"])
-                if parent:
-                    import re
-
-                    m = re.search(r"(20\d{2})[-./年](\d{1,2})[-./月](\d{1,2})", parent.get_text(" "))
-                    if m:
-                        date_txt = f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+                row = a.find_parent(["tr", "li"]) or a.parent
+                date_txt = extract_date(row.get_text(" ") if row else "", href)
                 out.append(
                     self.item(
                         title=title,
@@ -263,7 +330,8 @@ class PBCCrawler(BaseCrawler):
             },
             referer="https://www.gov.cn/",
         )
-        for _, block in ((data or {}).get("catMap") or {}).items():
+        cat = ((data or {}).get("searchVO") or {}).get("catMap") or (data or {}).get("catMap") or {}
+        for _, block in cat.items():
             for r in (block or {}).get("listVO") or []:
                 out.append(
                     self.item(
@@ -271,7 +339,8 @@ class PBCCrawler(BaseCrawler):
                         url=r.get("url") or "",
                         published_at=parse_time((r.get("pubtimeStr") or "").replace(".", "-")),
                         summary=(r.get("summary") or "")[:300],
-                        channel="中国人民银行(经政府网)",
+                        channel="中国人民银行(经政府网)"
+                        + (f"·{r.get('puborg')}" if r.get("puborg") else ""),
                         doc_no=r.get("pcode") or "",
                     )
                 )
@@ -289,41 +358,50 @@ class SAFECrawler(BaseCrawler):
     source_name = "国家外汇管理局"
     kind = "official"
     homepage = "https://www.safe.gov.cn/"
-    base_score = 70.0
+    base_score = 28.0
 
+    # 栏目 URL 2026-09-12 实测 (旧版的 /safe/xwfb/ 已改名为 /safe/whxw/)
     LIST_PAGES = {
         "https://www.safe.gov.cn/safe/zcfg/index.html": "政策法规",
-        "https://www.safe.gov.cn/safe/xwfb/index.html": "新闻发布",
+        "https://www.safe.gov.cn/safe/whxw/index.html": "外汇新闻",
+        "https://www.safe.gov.cn/safe/ywfb/index.html": "要闻发布",
     }
+    # 列表页翻页规则: index.html → index_2.html → index_3.html ...
+    PAGE_PATTERN = "https://www.safe.gov.cn/safe/{col}/index_{n}.html"
 
     def fetch(self) -> list[NewsItem]:
         from bs4 import BeautifulSoup
-        import re
 
         out: list[NewsItem] = []
         for url, channel in self.LIST_PAGES.items():
-            r = self.f.get(url, referer=self.homepage, encoding="utf-8")
-            if r is None:
-                continue
-            soup = BeautifulSoup(r.text, "html.parser")
-            for li in soup.select("li"):
-                a = li.find("a", href=True)
-                if not a:
+            col = url.rstrip("/").split("/")[-2]
+            urls = [url] + [
+                self.PAGE_PATTERN.format(col=col, n=n) for n in range(2, self.pages + 1)
+            ]
+            for u in urls:
+                r = self.f.get(u, referer=self.homepage, encoding="utf-8")
+                if r is None:
                     continue
-                title = a.get_text(strip=True)
-                if len(title) < 8:
-                    continue
-                m = re.search(r"(20\d{2})[-./](\d{1,2})[-./](\d{1,2})", li.get_text(" "))
-                out.append(
-                    self.item(
-                        title=title,
-                        url=abs_url(url, a["href"]),
-                        published_at=parse_time(
-                            f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-                        ) if m else "",
-                        channel=channel,
+                soup = BeautifulSoup(r.text, "html.parser")
+                for li in soup.select("li"):
+                    a = li.find("a", href=True)
+                    if not a:
+                        continue
+                    title = (a.get("title") or a.get_text(strip=True)).strip()
+                    if len(title) < 8:
+                        continue
+                    date_txt = extract_date(li.get_text(" "), a["href"])
+                    # 栏目页会把下级栏目做成无日期的 li, 只保留真正带日期的新闻条目
+                    if not date_txt:
+                        continue
+                    out.append(
+                        self.item(
+                            title=title,
+                            url=abs_url(u, a["href"]),
+                            published_at=parse_time(date_txt),
+                            channel=channel,
+                        )
                     )
-                )
         return out
 
 
@@ -334,6 +412,17 @@ class ConfigListCrawler(BaseCrawler):
     """由 config/sources.yaml 驱动的通用 HTML 列表抓取器.
 
     这样新增一个政务站点不用写代码, 只要在 yaml 里配 selector。
+
+    每个 page 支持:
+      url              列表页地址
+      channel          栏目名
+      item_selector    列表项选择器 (默认 li)
+      link_selector    列表项里的链接选择器 (默认 a[href])
+      container_selector 可选, 先圈定正文区域, 避免命中导航
+      require_date     true 时丢弃没有日期的条目 (导航菜单几乎都没有日期)
+      min_title_len    标题最短长度 (默认 8)
+      page_pattern     翻页模板, 含 {n}, 如 https://x/safe/whxw/index_{n}.html
+      page_start       翻页起始页号 (默认 1)
     """
 
     def __init__(self, cfg: dict, fetcher=None, pages: int = 1) -> None:  # noqa: ANN001
@@ -342,37 +431,57 @@ class ConfigListCrawler(BaseCrawler):
         self.source_id = cfg["id"]
         self.source_name = cfg.get("name", cfg["id"])
         self.kind = cfg.get("kind", "official")
-        self.base_score = float(cfg.get("base_score", 60))
+        self.base_score = float(cfg.get("base_score", 25))
         self.homepage = cfg.get("homepage", "")
 
     def fetch(self) -> list[NewsItem]:
         from bs4 import BeautifulSoup
-        import re
 
         out: list[NewsItem] = []
         for page in self.cfg.get("pages", []):
-            url = page["url"]
-            r = self.f.get(url, referer=self.homepage or url, encoding=page.get("encoding"))
-            if r is None:
-                continue
-            soup = BeautifulSoup(r.text, "html.parser")
-            for node in soup.select(page.get("item_selector", "li")):
-                a = node.select_one(page.get("link_selector", "a[href]"))
-                if not a or not a.get("href"):
+            first = page["url"]
+            pattern = page.get("page_pattern")
+            page_start = int(page.get("page_start", 1))
+            urls = [first]
+            if pattern:
+                urls += [
+                    pattern.format(n=n)
+                    for n in range(page_start + 1, page_start + max(1, self.pages))
+                ]
+            seen: set[str] = set()
+            require_date = bool(page.get("require_date", False))
+            min_len = int(page.get("min_title_len", 8))
+            for url in urls:
+                r = self.f.get(url, referer=self.homepage or url, encoding=page.get("encoding"))
+                if r is None:
                     continue
-                title = a.get_text(strip=True)
-                if len(title) < int(page.get("min_title_len", 8)):
+                soup = BeautifulSoup(r.text, "html.parser")
+                scope = soup.select_one(page["container_selector"]) if page.get(
+                    "container_selector"
+                ) else soup
+                if scope is None:
                     continue
-                text = node.get_text(" ")
-                m = re.search(r"(20\d{2})[-./年](\d{1,2})[-./月](\d{1,2})", text)
-                out.append(
-                    self.item(
-                        title=title,
-                        url=abs_url(url, a["href"]),
-                        published_at=parse_time(
-                            f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-                        ) if m else "",
-                        channel=page.get("channel", ""),
+                for node in scope.select(page.get("item_selector", "li")):
+                    a = node.select_one(page.get("link_selector", "a[href]"))
+                    if not a or not a.get("href"):
+                        continue
+                    title = strip_trailing_date((a.get("title") or a.get_text(strip=True)).strip())
+                    if len(title) < min_len:
+                        continue
+                    href = a["href"]
+                    full = abs_url(url, href)
+                    if full in seen:
+                        continue
+                    date_txt = extract_date(node.get_text(" "), href)
+                    if require_date and not date_txt:
+                        continue
+                    seen.add(full)
+                    out.append(
+                        self.item(
+                            title=title,
+                            url=full,
+                            published_at=parse_time(date_txt) if date_txt else "",
+                            channel=page.get("channel", ""),
+                        )
                     )
-                )
         return out

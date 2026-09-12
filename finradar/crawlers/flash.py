@@ -23,7 +23,7 @@ class EastmoneyFlash(BaseCrawler):
     source_name = "东方财富·全球财经快讯"
     kind = "flash"
     homepage = "https://kuaixun.eastmoney.com/7_24.html"
-    base_score = 20.0
+    base_score = 8.0
 
     API = "https://np-weblist.eastmoney.com/comm/web/getFastNewsList"
 
@@ -64,7 +64,7 @@ class EastmoneyBreakfast(BaseCrawler):
     source_name = "东方财富·财经早餐"
     kind = "flash"
     homepage = "https://stock.eastmoney.com/a/czpnc.html"
-    base_score = 30.0
+    base_score = 12.0
 
     API = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns"
 
@@ -110,7 +110,7 @@ class ThsFlash(BaseCrawler):
     source_name = "同花顺·全球财经直播"
     kind = "flash"
     homepage = "https://news.10jqka.com.cn/realtimenews.html"
-    base_score = 20.0
+    base_score = 8.0
 
     API = "https://news.10jqka.com.cn/tapp/news/push/stock"
 
@@ -146,7 +146,7 @@ class SinaFlash(BaseCrawler):
     source_name = "新浪财经·7x24快讯"
     kind = "flash"
     homepage = "https://finance.sina.com.cn/7x24"
-    base_score = 20.0
+    base_score = 8.0
 
     API = "https://zhibo.sina.com.cn/api/zhibo/feed"
 
@@ -193,7 +193,7 @@ class ClsTelegraph(BaseCrawler):
     source_name = "财联社·电报"
     kind = "flash"
     homepage = "https://www.cls.cn/telegraph"
-    base_score = 25.0
+    base_score = 10.0
 
     API = "https://www.cls.cn/v1/roll/get_roll_list"
 
@@ -223,6 +223,7 @@ class ClsTelegraph(BaseCrawler):
                 channel="电报-重点" if level in ("A", "B") else "电报",
             )
             if level in ("A", "B"):
-                it.policy_score = 35.0
+                # 财联社自己给的重点标记: 在来源先验分上加点, 不直接给绝对分
+                it.policy_score = self.base_score + 12
             out.append(it)
         return out

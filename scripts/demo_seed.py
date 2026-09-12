@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from finradar.analysis import annotate, combined_hotwords, write_report  # noqa: E402
+from finradar.crawlers import source_base_score  # noqa: E402
 from finradar.models import NewsItem  # noqa: E402
 from finradar.storage import Store  # noqa: E402
 
@@ -46,6 +47,9 @@ def main() -> None:
         for i, (s, n, t, p, sm) in enumerate(SAMPLES)
     ]
     items = annotate(items)
+    # 与真实抓取保持一致: 来源先验分是打分下限(crawl 时由 BaseCrawler.run 施加)
+    for it in items:
+        it.policy_score = max(it.policy_score, source_base_score(it.source))
 
     print("=== 政策相关度打分结果 ===")
     for it in sorted(items, key=lambda x: -x.policy_score):

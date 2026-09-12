@@ -37,7 +37,9 @@ class BaseCrawler(ABC):
     source_name: str = "基类"
     kind: str = "official"
     homepage: str = ""
-    # 政策权重: 官方站点天然权重高, 快讯需要靠关键词提分
+    # 来源先验分 (0-30): 只表示"这条出自官方站/快讯", 是打分的下限而不是主体。
+    # 真正的排序交给 config/keywords.yaml 的关键词信号 —— 早期版本把官方站设成
+    # 70-80 分, 结果央行领导的一场例行会见也能顶到 100 分, 日报失去区分度。
     base_score: float = 0.0
 
     def __init__(self, fetcher: Fetcher | None = None, pages: int = 1) -> None:

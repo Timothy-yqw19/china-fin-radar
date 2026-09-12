@@ -6,13 +6,22 @@ import logging
 import os
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import requests
 
 LOG = logging.getLogger("finradar")
+
+# 抓的都是境内站点, 发布日期/时间戳按北京时间理解最不容易出错
+# (本机时区可能是纽约, datetime.now() 会凭空差一天)
+CN_TZ = timezone(timedelta(hours=8))
+
+
+def now_cn() -> datetime:
+    """北京时间当前时刻(不依赖本机时区与 tzdata)."""
+    return datetime.now(CN_TZ)
 
 PKG_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PKG_DIR.parent
@@ -142,13 +151,14 @@ class Fetcher:
 def parse_time(raw: Any, default_today: bool = True) -> str:
     """把各种时间表示统一成 'YYYY-MM-DD HH:MM:SS'."""
     if raw is None or raw == "":
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S") if default_today else ""
+        return now_cn().strftime("%Y-%m-%d %H:%M:%S") if default_today else ""
     if isinstance(raw, (int, float)) or (isinstance(raw, str) and raw.isdigit() and len(raw) >= 10):
         ts = float(raw)
         if ts > 1e12:  # 毫秒
             ts /= 1000
         try:
-            return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+            # 北京时间: 快讯接口给的是秒级时间戳, 用本机时区换算会差小时甚至差天
+            return datetime.fromtimestamp(ts, CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
         except (OSError, ValueError, OverflowError):
             pass
     s = str(raw).strip().replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
@@ -165,18 +175,18 @@ def parse_time(raw: Any, default_today: bool = True) -> str:
         try:
             dt = datetime.strptime(s, fmt)
             if fmt in ("%m-%d %H:%M", "%H:%M"):
-                now = datetime.now()
+                now = now_cn()
                 dt = dt.replace(year=now.year, month=dt.month or now.month, day=dt.day or now.day)
                 if fmt == "%H:%M":
                     dt = dt.replace(month=now.month, day=now.day)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S") if default_today else str(raw)
+    return now_cn().strftime("%Y-%m-%d %H:%M:%S") if default_today else str(raw)
 
 
 def days_ago(n: int) -> str:
-    return (datetime.now() - timedelta(days=n)).strftime("%Y-%m-%d")
+    return (now_cn() - timedelta(days=n)).strftime("%Y-%m-%d")
 
 
 def abs_url(base: str, href: str) -> str:

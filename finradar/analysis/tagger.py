@@ -56,6 +56,7 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
     text = f"{item.title} {item.summary} {item.channel} {item.doc_no}"
     score = float(item.policy_score)
     tags: list[str] = []
+    # 只有正向类别的命中才进热词/标签; 负向类别(噪音、例行事项)只用来扣分
     hits: list[str] = []
 
     for cat, cfg in rules.items():
@@ -64,11 +65,11 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
         matched = [k for k in words if k in text]
         if not matched:
             continue
-        hits.extend(matched)
         # 同一类别命中多个词按 1 + 0.25*(n-1) 递减计分, 且单类别最多算 2 倍权重,
         # 避免堆砌关键词刷分
         score += w * min(2.0, 1 + 0.25 * (len(matched) - 1))
-        if cat != "noise":
+        if w > 0:
+            hits.extend(matched)
             label = CATEGORY_LABEL.get(cat, cat)
             if label not in tags:
                 tags.append(label)
