@@ -1,0 +1,288 @@
+<title>金融政策洞察 · 专题与名词档案</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+__STYLE__
+<style>
+/* ---- 本页追加样式(沿用词库页的变量, 不另起一套) ---- */
+.ins-head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;margin:0 0 10px}
+.ins-head h3{margin:0;font-size:19px;line-height:1.35}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--rule);
+  color:var(--muted);background:var(--raised);white-space:nowrap}
+.thesis{background:var(--jade-soft);border-left:3px solid var(--jade);border-radius:0 8px 8px 0;
+  padding:10px 12px;margin:10px 0 14px;font-size:14.5px}
+.blk{margin:14px 0}
+.blk > h4{margin:0 0 8px;font-size:13px;letter-spacing:.06em;color:var(--seal);font-weight:700}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:0 0 10px 16px;border-left:1px solid var(--rule-soft);font-size:14px}
+.tl li::before{content:"";position:absolute;left:-4px;top:7px;width:7px;height:7px;border-radius:50%;
+  background:var(--seal)}
+.tl .when{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);margin-right:8px}
+.tl .src{color:var(--muted);font-size:12px}
+.actor{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--raised)}
+.actor .who{font-weight:700;font-size:14px}
+.actor .hz{font-size:11.5px;color:var(--muted);margin-left:6px}
+.actor .act{margin:6px 0 0;font-size:14px}
+.actor .trg{margin:6px 0 0;font-size:13px;color:var(--muted);padding-left:9px;border-left:2px solid var(--gold)}
+.watch{margin:0;padding-left:18px;font-size:13.5px}
+.watch li{margin-bottom:4px}
+.docs{margin:8px 0 0;padding:0;list-style:none;font-size:13px}
+.docs li{padding:4px 0;border-bottom:1px dashed var(--rule-soft)}
+.docs a{text-decoration:none;border-bottom:1px solid var(--rule)}
+.docs .m{color:var(--muted);font-size:12px;font-family:"IBM Plex Mono",monospace}
+.yearrow{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.yr{font-size:12px;padding:2px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--rule)}
+.yr b{color:var(--seal);font-family:"IBM Plex Mono",monospace}
+.spark{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--jade);letter-spacing:1px}
+.cand{border:1px solid var(--rule);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surface)}
+.cand .w{font-size:16px;font-weight:700}
+.note{background:var(--raised);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;
+  font-size:13.5px;color:var(--ink-2);margin:0 0 16px}
+.term-head{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:14px;margin:8px 0}
+.kv dt{color:var(--muted);font-size:12.5px;padding-top:2px}
+.kv dd{margin:0}
+.quote{border-left:2px solid var(--jade);padding-left:10px;color:var(--ink-2);font-size:14px}
+</style>
+
+<header class="masthead">
+  <div class="mast-in">
+    <div class="brand">
+      <div class="seal">脉络 · 现状 · 各方动作</div>
+      <h1>金融政策洞察</h1>
+      <p class="tagline">一条线一条线地看：这条路怎么走到今天、现在卡在哪、
+        <b>监管 / 公募 / 券商 / 银行 / 保险 / 外资机构</b>接下来可能做什么（都带触发条件）。
+        名词档案覆盖全部热词，并由过去几年的政策文件自动补上"出现次数、首见年份、代表文件"。</p>
+    </div>
+    <div class="mast-meta">
+      <div class="stat"><b id="nIns">0</b><span>专题</span></div>
+      <div class="stat"><b id="nTerms">0</b><span>名词档案</span></div>
+      <div class="stat"><b id="nCand">0</b><span>候选新词</span></div>
+      <div class="stat"><b id="nNews">0</b><span>条语料</span></div>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-view="ins">专题洞察</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="terms">名词档案</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="cand">候选新词</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="panel" id="v-ins" role="tabpanel">
+    <div class="filters">
+      <input class="search" id="qIns" type="search" placeholder="搜索专题、判断、关键词…" aria-label="搜索专题">
+      <div class="fgroup" id="fActor"><span class="flabel">主体</span></div>
+    </div>
+    <div id="insList"></div>
+  </section>
+
+  <section class="panel" id="v-terms" role="tabpanel" hidden>
+    <div class="filters">
+      <input class="search" id="qTerm" type="search" placeholder="搜索名词、定义、考点…" aria-label="搜索名词">
+      <div class="fgroup" id="fCat"><span class="flabel">分类</span></div>
+      <div class="fgroup"><button class="chip" id="fOnlyHit" aria-pressed="false">只看语料里出现过的</button></div>
+    </div>
+    <div id="termList"></div>
+  </section>
+
+  <section class="panel" id="v-cand" role="tabpanel" hidden>
+    <div class="note">
+      <b>这些是从政策文件标题里自动挖出来的提法</b>（字符 n-gram + 后缀定向抽取 + 碎片剔除），
+      词库里还没有收录。它是<b>待人工确认的候选池</b>，不是权威口径——里面会混进机构名和跨词碎片，
+      挑出真正有信息量的，照 <code>docs/GLOSSARY_SCHEMA.md</code> 补成词条或专题。
+      每个词后面标了出现次数、首见年份和年度走势，年份越新越值得看。
+    </div>
+    <input class="search" id="qCand" type="search" placeholder="搜索候选词…" aria-label="搜索候选词">
+    <div id="candList" style="margin-top:14px"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  语料覆盖 <span id="cover">—</span>，生成于 <span id="gen">—</span>。
+  　内容用于求职学习整理，不构成投资建议；政策以官方原文为准，数字请按标注的截止时点核对最新来源。
+</footer>
+
+<script>
+(function(){
+const D = __INSIGHT_DATA__;
+const q = (s, r=document) => r.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const num = n => (n||0).toLocaleString("zh-CN");
+
+function docLine(d){
+  const t = esc(d.title), u = d.url||"";
+  const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>` : t;
+  const meta = [d.date, d.source, d.doc_no, d.score?("政策分 "+d.score):""].filter(Boolean).join(" · ");
+  return `<li>${link}<div class="m">${esc(meta)}</div></li>`;
+}
+
+function renderInsights(){
+  const list = q("#insList");
+  list.innerHTML = D.insights.map((it, i) => {
+    const actors = (it.actors||[]).map(a=>`<span class="badge">${esc(a)}</span>`).join("");
+    const tl = (it.timeline||[]).map(e=>`<li><span class="when">${esc(e.when)}</span>${esc(e.event)}
+        ${e.source?`<div class="src">出处：${esc(e.source)}</div>`:""}</li>`).join("");
+    const auto = (it.stats?.by_year||[]).map(y=>`
+        <div class="yearrow"><span class="yr"><b>${esc(y.year)}</b></span></div>
+        <ul class="docs">${y.docs.map(docLine).join("")}</ul>`).join("");
+    const snap = (it.snapshot||[]).map(s=>`<li><span class="when">${esc(s.label)}</span>
+        ${esc(s.value)}${s.as_of?`<span class="src">（${esc(s.as_of)}）</span>`:""}</li>`).join("");
+    const latest = (it.stats?.latest||[]).slice(0,5).map(docLine).join("");
+    const out = (it.outlook||[]).map(o=>`<div class="actor">
+        <div class="who">${esc(o.actor)}${o.horizon?`<span class="hz">${esc(o.horizon)}</span>`:""}</div>
+        <p class="act">可能动作：${esc(o.action)}</p>
+        ${o.trigger?`<p class="trg">触发条件：${esc(o.trigger)}</p>`:""}</div>`).join("");
+    const watch = (it.watchlist||[]).map(w=>`<li>${esc(w)}</li>`).join("");
+    const rel = (it.related_terms||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join("");
+    return `<article class="card" data-actor="${esc((it.actors||[]).join("|"))}"
+        data-blob="${esc([it.topic,it.thesis,it.category,(it.keywords||[]).join(" "),(it.actors||[]).join(" ")].join(" "))}">
+      <div class="ins-head"><h3>${esc(it.topic)}</h3><span class="badge">${esc(it.category||"")}</span></div>
+      <div>${actors}</div>
+      <p class="thesis"><b>核心判断：</b>${esc(it.thesis)}</p>
+      <div class="blk"><h4>脉络（人工整理）</h4><ul class="tl">${tl}</ul></div>
+      ${auto?`<div class="blk"><h4>脉络（自动聚合自你抓到的文件）</h4>${auto}</div>`:""}
+      ${latest?`<div class="blk"><h4>最新动态</h4><ul class="docs">${latest}</ul></div>`:""}
+      ${snap?`<div class="blk"><h4>现状快照（带截止时点）</h4><ul class="tl">${snap}</ul></div>`:""}
+      <div class="blk"><h4>未来可能的动作（按主体拆，触发条件 → 动作）</h4>${out}</div>
+      ${watch?`<div class="blk"><h4>盯这几个信号</h4><ul class="watch">${watch}</ul></div>`:""}
+      <div class="blk"><h4>面试口径（60–90 秒）</h4><div class="quote">${esc(it.interview_take)}</div></div>
+      ${rel?`<div class="blk"><h4>关联热词（可到名词档案里看详解）</h4><div>${rel}</div></div>`:""}
+    </article>`;
+  }).join("");
+}
+
+function renderTerms(){
+  q("#termList").innerHTML = D.terms.map(t => {
+    const st = t.stats||{};
+    const chips = [t.category, t.heat?("热度 "+"★".repeat(t.heat)):""].concat(t.institutions||[])
+      .filter(Boolean).map(x=>`<span class="badge">${esc(x)}</span>`).join("");
+    const years = (st.by_year||[]).map(y=>`<span class="yr">${esc(y.year)} <b>${y.n}</b></span>`).join("");
+    const pts = (t.exam_points||[]).map(p=>`<li>${esc(p)}</li>`).join("");
+    const fus = (t.followups||[]).map(f=>`<div class="actor"><div class="who">追问：${esc(f.q)}</div>
+        <p class="act">${esc(f.a)}</p></div>`).join("");
+    const docs = (t.docs||[]).map(docLine).join("");
+    return `<article class="card" data-cat="${esc(t.category||"")}" data-hit="${st.n?1:0}"
+        data-blob="${esc([t.term,t.definition,t.why_hot,(t.exam_points||[]).join(" "),(t.aliases||[]).join(" ")].join(" "))}">
+      <div class="term-head"><h3 style="margin:0">${esc(t.term)}</h3>
+        <span class="badge">语料出现 <b>${num(st.n)}</b> 次</span>
+        ${st.first_year?`<span class="badge">首见 ${esc(st.first_year)}</span>`:""}
+        ${st.latest_date?`<span class="badge">最近 ${esc(st.latest_date)}</span>`:""}</div>
+      <div style="margin-top:6px">${chips}</div>
+      ${years?`<div class="yearrow">${years}</div>`:""}
+      <dl class="kv">
+        <dt>定义</dt><dd>${esc(t.definition)}</dd>
+        ${t.why_hot?`<dt>为什么热</dt><dd>${esc(t.why_hot)}</dd>`:""}
+        ${t.source?`<dt>出处</dt><dd>${esc(t.source)}</dd>`:""}
+      </dl>
+      ${pts?`<div class="blk"><h4>考点清单</h4><ul class="watch">${pts}</ul></div>`:""}
+      ${t.interview_answer?`<div class="blk"><h4>面试口径（60–90 秒）</h4>
+        <div class="quote">${esc(t.interview_answer)}</div></div>`:""}
+      ${fus?`<div class="blk"><h4>追问及应答</h4>${fus}</div>`:""}
+      ${docs?`<div class="blk"><h4>语料里的代表文件</h4><ul class="docs">${docs}</ul></div>`:""}
+    </article>`;
+  }).join("");
+}
+
+function renderCandidates(){
+  q("#candList").innerHTML = D.candidates.map(c => {
+    const years = (c.by_year||[]).map(y=>`<span class="yr">${esc(y.year)} <b>${y.n}</b></span>`).join("");
+    const samples = (c.samples||[]).map(docLine).join("");
+    return `<article class="cand" data-blob="${esc(c.word)}">
+      <div><span class="w">${esc(c.word)}</span>
+        <span class="badge">出现 ${num(c.n)} 次</span>
+        ${c.first_year?`<span class="badge">首见 ${esc(c.first_year)}</span>`:""}</div>
+      <div class="yearrow">${years}</div>
+      <ul class="docs">${samples}</ul>
+    </article>`;
+  }).join("");
+}
+
+function applySearch(panel, inputSel, cardSel){
+  const needle = (document.querySelector(inputSel)?.value || "").trim().toLowerCase();
+  document.querySelectorAll(`${panel} ${cardSel}`).forEach(el=>{
+    const hit = !needle || (el.dataset.blob||"").toLowerCase().includes(needle);
+    el.style.display = hit ? "" : "none";
+  });
+}
+
+function initFilters(){
+  const actorCount = {};
+  D.insights.forEach(it => (it.actors||[]).forEach(a => actorCount[a]=(actorCount[a]||0)+1));
+  const fa = q("#fActor");
+  Object.keys(actorCount).forEach(a=>{
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = a; b.dataset.actor = a; b.setAttribute("aria-pressed","false");
+    b.onclick = () => {
+      const on = b.getAttribute("aria-pressed") === "false";
+      fa.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      document.querySelectorAll("#v-ins .card").forEach(el=>{
+        const ok = !on || (el.dataset.actor||"").split("|").includes(a);
+        el.style.display = ok ? "" : "none";
+      });
+    };
+    fa.appendChild(b);
+  });
+
+  const cats = [...new Set(D.terms.map(t=>t.category).filter(Boolean))];
+  const fc = q("#fCat");
+  cats.forEach(c=>{
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = c; b.setAttribute("aria-pressed","false");
+    b.onclick = () => {
+      const on = b.getAttribute("aria-pressed") === "false";
+      fc.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      document.querySelectorAll("#v-terms .card").forEach(el=>{
+        const ok = !on || el.dataset.cat === c;
+        el.style.display = ok ? "" : "none";
+      });
+    };
+    fc.appendChild(b);
+  });
+
+  const onlyHit = q("#fOnlyHit");
+  onlyHit.onclick = () => {
+    const on = onlyHit.getAttribute("aria-pressed") === "false";
+    onlyHit.setAttribute("aria-pressed", on ? "true":"false");
+    document.querySelectorAll("#v-terms .card").forEach(el=>{
+      const ok = !on || el.dataset.hit === "1";
+      el.style.display = ok ? "" : "none";
+    });
+  };
+
+  q("#qIns").oninput = () => applySearch("#v-ins", "#qIns", ".card");
+  q("#qTerm").oninput = () => applySearch("#v-terms", "#qTerm", ".card");
+  q("#qCand").oninput = () => applySearch("#v-cand", "#qCand", ".cand");
+}
+
+function initTabs(){
+  document.querySelectorAll(".tab").forEach(t => {
+    t.onclick = () => {
+      document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected","false"));
+      t.setAttribute("aria-selected","true");
+      ["ins","terms","cand"].forEach(v=>{
+        q("#v-"+v).hidden = (v !== t.dataset.view);
+      });
+      location.hash = t.dataset.view;
+    };
+  });
+  const h = (location.hash||"").replace("#","");
+  if (["ins","terms","cand"].includes(h)) document.querySelector(`.tab[data-view="${h}"]`).click();
+  // 单条专题页里没有候选词/名词档案时, 把空标签页隐藏掉
+  const counts = {ins: D.insights.length, terms: D.terms.length, cand: D.candidates.length};
+  document.querySelectorAll(".tab").forEach(t => {
+    if (!counts[t.dataset.view]) t.style.display = "none";
+  });
+}
+
+q("#nIns").textContent = D.insights.length;
+q("#nTerms").textContent = D.terms.length;
+q("#nCand").textContent = D.candidates.length;
+q("#nNews").textContent = num(D.n_news);
+q("#cover").textContent = D.coverage || "—";
+q("#gen").textContent = D.generated || "—";
+renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
+})();
+</script>

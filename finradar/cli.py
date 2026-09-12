@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from . import __version__
 from .analysis import (
@@ -286,6 +287,26 @@ def cmd_insight(a: argparse.Namespace) -> int:
         store = Store(a.db)
         since, _, _ = resolve_window(a.window, a.days)
         rows = store.query(since=since, min_score=a.min_score, limit=200000)
+    if a.html:
+        # 单条专题也出一个网页(含它的关联热词档案), 方便发给别人或手机上翻
+        from .analysis.insight_site import build_payload, render_site
+        from .knowledge import glossary as _G
+
+        related = set(it.related_terms)
+        terms = [t for t in _G.load_glossary() if t.term in related]
+        payload = build_payload(
+            Store(a.db).query(limit=10**6),
+            insights=[it],
+            terms=terms,
+            candidates=False,
+            min_score=max(30.0, a.min_score),
+        )
+        out = a.out or str(workdir() / "insights" / f"{it.id}.html")
+        p = Path(out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(render_site(payload), encoding="utf-8")
+        print(f"已生成 {p}（专题 1 条 / 关联名词档案 {len(terms)} 条）")
+        return 0
     print(render_insight(it, rows, per_year=a.per_year, recent=a.recent))
     return 0
 
@@ -541,6 +562,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--per-year", type=int, default=3, help="自动脉络里每年展示几条")
     s.add_argument("--recent", type=int, default=5, help="展示几条最新动态")
     s.add_argument("--no-news", action="store_true", help="只看人工整理的部分，不关联库内文件")
+    s.add_argument("--html", action="store_true", help="导出这一条专题的网页（含关联名词档案）")
+    s.add_argument("--out", default=None, help="网页输出路径，默认 output/insights/<id>.html")
     s.set_defaults(func=cmd_insight)
 
     s = sub.add_parser("terms", help="检索热词库")

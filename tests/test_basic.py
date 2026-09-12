@@ -513,3 +513,75 @@ def test_insight_render_and_report_section():
     assert "专题洞察与展望" in md and "证监发〔2025〕21号" in md
     html = build_html(rows, title="回顾", insights=[it])
     assert "专题洞察与展望" in html and "<li>" in html
+
+
+# ---------------------------------------------------------------- 名词档案与网页
+
+def _rows_fixture():
+    return [
+        {"title": "关于扩大金融资产投资公司股权投资试点的通知", "summary": "",
+         "pub_date": "2024-09-25", "policy_score": 80, "url": "https://gov.cn/a",
+         "doc_no": "金办便函〔2024〕1210号", "source_name": "金融监管总局"},
+        {"title": "金融资产投资公司股权投资试点扩容至更多城市", "summary": "",
+         "pub_date": "2025-03-05", "policy_score": 82, "url": "https://gov.cn/b",
+         "doc_no": "金办发〔2025〕19号", "source_name": "金融监管总局"},
+        {"title": "多地推进股权投资试点，金融资产投资公司参与", "summary": "",
+         "pub_date": "2025-06-01", "policy_score": 60, "url": "https://gov.cn/c",
+         "doc_no": "", "source_name": "政府网"},
+        {"title": "商务部关于印发某某办法的通知", "summary": "",
+         "pub_date": "2025-06-02", "policy_score": 90, "url": "https://gov.cn/d",
+         "doc_no": "", "source_name": "商务部"},
+        # demo 假数据不该进任何统计
+        {"title": "金融资产投资公司股权投资试点", "summary": "",
+         "pub_date": "2026-09-03", "policy_score": 99, "url": "https://example.invalid/3",
+         "doc_no": "", "source_name": "演示"},
+    ]
+
+
+def test_term_dossiers_join_corpus():
+    from finradar.analysis.dossiers import term_dossiers
+    from finradar.knowledge import insights as I
+
+    terms = [t for t in G.load_glossary() if t.id == "bank_aic"]
+    if not terms:
+        pytest.skip("词库里没有 AIC 词条")
+    d = term_dossiers(terms, _rows_fixture(), I.load_insights())[0]
+    assert d["stats"]["n"] == 3, "demo 假数据和无关文件不该被算进来"
+    assert d["stats"]["first_year"] == "2024"
+    assert d["stats"]["latest_date"] == "2025-06-01"
+    assert d["docs"] and "股权投资试点" in d["docs"][0]["title"]
+    assert "tech-finance-aic-bond" in d["insights"], "应当关联到科技金融专题"
+
+
+def test_mine_candidates_finds_policy_terms_and_drops_junk():
+    from finradar.analysis.dossiers import mine_candidates
+
+    rows = _rows_fixture() * 2  # 让词频够高
+    got = {c["word"]: c for c in mine_candidates(rows, glossary_names=[], top=30, min_count=3)}
+    assert any("股权投资试点" in w for w in got), f"没挖到政策提法: {list(got)[:10]}"
+    for w in got:
+        assert not w.endswith(("部", "委", "局", "总局", "办公厅")), f"机构名没滤掉: {w}"
+        assert w not in ("管理办法", "实施方案", "行动方案"), f"公文类型没滤掉: {w}"
+    # 候选要带年度走势与例句
+    sample = next(iter(got.values()))
+    assert sample["by_year"] and sample["samples"] and sample["first_year"]
+
+
+def test_insight_site_payload_and_render():
+    from finradar.analysis.insight_site import build_payload, render_site
+    from finradar.knowledge import insights as I
+
+    it = I.get("QDII")
+    terms = [t for t in G.load_glossary() if t.term in set(it.related_terms)]
+    payload = build_payload(
+        _rows_fixture(), insights=[it], terms=terms, candidates=False, min_score=30
+    )
+    assert len(payload["insights"]) == 1 and len(payload["terms"]) == len(terms)
+    assert payload["candidates"] == []
+    assert payload["coverage"] and payload["n_news"] == len(_rows_fixture())
+
+    html = render_site(payload)
+    assert "__INSIGHT_DATA__" not in html and "__STYLE__" not in html
+    assert "金融政策洞察" in html and "未来可能的动作" in html
+    assert it.topic in html
+    assert "var(--seal)" in html or "--seal" in html  # 样式被注入
