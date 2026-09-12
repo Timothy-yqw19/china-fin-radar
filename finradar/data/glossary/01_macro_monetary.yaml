@@ -104,6 +104,7 @@ terms:
 
   - id: moderately_loose
     term: 适度宽松的货币政策
+    aliases: [适度宽松]
     category: 宏观与货币政策
     era: 2024
     plan: 十四五末转向，2025-2026 延续

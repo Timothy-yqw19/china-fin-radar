@@ -21,14 +21,16 @@ import sys
 
 from . import __version__
 from .analysis import (
-    annotate, combined_hotwords, dedupe_rows, discover_new_words, glossary_trend, write_report,
+    annotate, auto_bucket, combined_hotwords, dedupe_rows, discover_new_words,
+    render_trend, resolve_window, write_report,
 )
 from .crawlers import build_all, config_source_ids, registry
 from .knowledge import glossary as G
 from .knowledge import qbank as Q
 from .knowledge import quiz as QZ
+from .models import NewsItem
 from .storage import Store
-from .utils import Fetcher, days_ago, setup_logging, workdir
+from .utils import Fetcher, setup_logging, workdir
 
 
 # ---------------------------------------------------------------- 抓取
@@ -91,6 +93,69 @@ def cmd_doctor(a: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- 报告
 
+def cmd_backfill(a: argparse.Namespace) -> int:
+    """回捞历史数据.
+
+    快讯类接口没有历史, 所以能看到"过去 1/3/5 年"的只有官方政策文件:
+    中国政府网政策文件库支持按日期范围检索 (mintime/maxtime), 一年一年往回捞;
+    其余政务站(外汇局/统计局/发改委/基金业协会)是列表页翻页, 用 --pages 往深里翻。
+    """
+    from .analysis.periods import iter_periods
+    from .crawlers.official import GovPolicyCrawler
+
+    store = Store(a.db)
+    fetcher = Fetcher(timeout=a.timeout, retries=a.retries, verify=not a.insecure)
+    all_items: list[NewsItem] = []
+
+    want = set(a.source or ["gov"])
+    if {"gov", "policy"} & want:
+        crawler = GovPolicyCrawler(fetcher=fetcher, pages=1)
+        for label, start, end in iter_periods(a.start, a.end, a.step):
+            print(f"\n== {label}  {start} ~ {end}")
+
+            def progress(q, page, got, fresh, total, cat, _label=label):  # noqa: ANN001
+                totals = ", ".join(f"{k}={v.get('totalCount')}" for k, v in (cat or {}).items())
+                print(f"   [{q}] 第{page}页 取到{got} 新增{fresh} 累计{total}  ({totals})")
+
+            items = crawler.fetch_range(
+                start, end,
+                queries=a.queries,
+                max_pages=a.max_pages,
+                searchfield=a.search,
+                page_size=a.page_size,
+                progress=progress,
+            )
+            print(f"   → {label} 共 {len(items)} 条")
+            all_items.extend(items)
+
+    # 列表型源: 按页码深度回捞(它们看不到日期范围, 只能一页页往前翻)
+    list_sources = sorted(s for s in want if s not in ("gov", "policy"))
+    if list_sources:
+        for c in build_all(list_sources, pages=a.pages, fetcher=fetcher):
+            items = c.run()
+            print(f"\n== {c.source_name}（翻到第 {a.pages} 页）: {len(items)} 条")
+            all_items.extend(items)
+
+    if not all_items:
+        print("没有回捞到数据。检查 --from/--to 与 --source。")
+        return 1
+
+    items = annotate(all_items)
+    from .crawlers import source_base_score
+
+    for it in items:  # 回捞条目也要吃到来源先验分下限, 与 crawl 一致
+        it.policy_score = max(it.policy_score, source_base_score(it.source))
+    new = store.save_news(items)
+    dates = sorted(i.date for i in items if i.date)
+    print(
+        f"\n回捞 {len(items)} 条，入库新增 {new} 条（去重后）\n"
+        f"日期范围 {dates[0]} ~ {dates[-1]} → {store.path}"
+    )
+    st = store.stats()
+    print(f"库内累计 {st['total']} 条，最早 {st['earliest']}，最新 {st['latest']}")
+    return 0
+
+
 def cmd_rescore(a: argparse.Namespace) -> int:
     """改完 config/keywords.yaml 后, 把库里已有条目重新打一遍分 (不用重抓)."""
     from .crawlers import source_base_score
@@ -130,13 +195,26 @@ def cmd_rescore(a: argparse.Namespace) -> int:
 
 def cmd_report(a: argparse.Namespace) -> int:
     store = Store(a.db)
+    since, label, span = resolve_window(a.window, a.days)
+    group_by = a.group_by
+    if group_by == "auto":
+        # 长窗口按时段回顾, 短窗口按议题梳理
+        group_by = "time" if (span is None or span >= 180) else "issue"
+    bucket = a.bucket
+    if bucket == "auto":
+        bucket = auto_bucket(span)
     rows = store.query(
-        since=days_ago(a.days), min_score=a.min_score, keyword=a.keyword, limit=a.limit
+        since=since, min_score=a.min_score, keyword=a.keyword, limit=a.limit
     )
     if not rows:
-        print("库里没有符合条件的数据，先跑 `finradar crawl`。")
+        print(f"库里没有符合条件的 {label} 数据，先跑 `finradar crawl`（历史窗口需要 `finradar backfill`）。")
         return 1
-    paths = write_report(rows, title=a.title or f"金融政策日报（近{a.days}天）")
+    title = a.title or (
+        f"金融政策回顾（{label}）" if group_by == "time" else f"金融政策日报（{label}）"
+    )
+    paths = write_report(
+        rows, title=title, group_by=group_by, bucket=bucket, top_per_period=a.per_period
+    )
     print(f"Markdown: {paths['markdown']}\nHTML:     {paths['html']}")
     return 0
 
@@ -159,9 +237,11 @@ def cmd_stats(a: argparse.Namespace) -> int:
 
 def cmd_hot(a: argparse.Namespace) -> int:
     store = Store(a.db)
-    rows = store.query(since=days_ago(a.days), min_score=a.min_score, limit=5000)
+    since, label, span = resolve_window(a.window, a.days)
+    bucket = a.bucket if a.bucket != "auto" else auto_bucket(span)
+    rows = store.query(since=since, min_score=a.min_score, limit=200000)
     if not rows:
-        print("库里没数据，先跑 `finradar crawl`。")
+        print(f"库里没有 {label} 的数据，先跑 `finradar crawl`（历史窗口需要 `finradar backfill`）。")
         return 1
     # 同一件事被多个源抓到会让词频虚高, 先合并再统计
     raw_n = len(rows)
@@ -169,18 +249,19 @@ def cmd_hot(a: argparse.Namespace) -> int:
     texts = [f"{r.get('title','')} {r.get('summary','')}" for r in rows]
     cnt = combined_hotwords(rows)
     extra = f"，已合并 {raw_n - len(rows)} 条跨源重复" if raw_n != len(rows) else ""
-    print(f"\n=== 热词榜（近 {a.days} 天，{len(rows)} 条新闻，合并口径{extra}）===")
+    dates = sorted((r.get("pub_date") or "")[:10] for r in rows if (r.get("pub_date") or ""))
+    cover = f"，数据覆盖 {dates[0]} ~ {dates[-1]}" if dates else ""
+    print(f"\n=== 热词榜（{label}，{len(rows)} 条新闻，合并口径{extra}{cover}）===")
     for i, (w, n) in enumerate(cnt.most_common(a.top), 1):
         t = G.get(w)
         heat = "★" * (t.heat if t else 0)
         print(f"{i:>3}. {w:<28}{n:>4} 次   {heat}")
 
     if a.trend:
-        print(f"\n=== 趋势（按{a.bucket}）===")
-        tr = glossary_trend(rows, bucket=a.bucket)
-        for key in sorted(tr)[-8:]:
-            top = "、".join(f"{w}({n})" for w, n in tr[key].most_common(6))
-            print(f"  {key}: {top}")
+        from .analysis.periods import BUCKET_LABEL
+
+        print(f"\n=== 演变（按{BUCKET_LABEL.get(bucket, bucket)}）===")
+        print(render_trend(rows, bucket=bucket, top=min(a.top, 15), periods=a.periods))
 
     if a.discover:
         print("\n=== 新词发现（词库里还没有、但反复出现的提法）===")
@@ -325,25 +406,64 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_doctor)
 
     s = sub.add_parser("report", help="生成政策日报 (Markdown + HTML)")
-    s.add_argument("--days", type=int, default=1)
+    s.add_argument("--days", type=int, default=None, help="按天数取窗口（默认 30）")
+    s.add_argument(
+        "--window", default=None,
+        help="窗口预设: 3m / 6m / 1y / 3y / 5y / all（优先于 --days）",
+    )
+    s.add_argument(
+        "--group-by", choices=["auto", "issue", "time"], default="auto",
+        help="auto: 半年以上按时段回顾，否则按议题梳理",
+    )
+    s.add_argument(
+        "--bucket", choices=["auto", "day", "week", "month", "quarter", "year"],
+        default="auto", help="时段粒度（--group-by time 时生效）",
+    )
+    s.add_argument("--per-period", type=int, default=8, help="每个时段展示几条")
     s.add_argument("--min-score", type=float, default=45.0)
     s.add_argument("--keyword", default=None)
-    s.add_argument("--limit", type=int, default=300)
+    s.add_argument("--limit", type=int, default=5000)
     s.add_argument("--title", default=None)
     s.set_defaults(func=cmd_report)
 
     s = sub.add_parser("stats", help="库存与刷题统计")
     s.set_defaults(func=cmd_stats)
 
+    s = net(sub.add_parser("backfill", help="回捞历史（政策文件库按日期范围，其余源按页码）"))
+    s.add_argument("--from", dest="start", default="2021-01-01", help="起始日期 YYYY-MM-DD")
+    s.add_argument("--to", dest="end", default=None, help="结束日期，默认今天（北京时间）")
+    s.add_argument("--step", choices=["year", "quarter", "month"], default="year")
+    s.add_argument("--max-pages", type=int, default=4, help="每个关键词每时段最多翻几页")
+    s.add_argument("--page-size", type=int, default=50, help="每页条数（政策库最多 50）")
+    s.add_argument("--queries", nargs="*", default=None, help="政策库检索词，默认 金融/货币政策/资本市场")
+    s.add_argument(
+        "--search", choices=["title", "fulltext"], default="fulltext",
+        help="title 只匹配标题（精度高），fulltext 全文匹配（覆盖广）",
+    )
+    s.add_argument(
+        "--source", nargs="*", default=["gov"],
+        help="gov（政策文件库，按日期回捞）/ 列表型源 id（如 safe stats ndrc amac mof，按页码回捞）",
+    )
+    s.add_argument("--pages", type=int, default=8, help="列表型源翻到第几页")
+    s.set_defaults(func=cmd_backfill)
+
     s = sub.add_parser("rescore", help="改完打分规则后重算库里已有条目")
     s.set_defaults(func=cmd_rescore)
 
     s = sub.add_parser("hot", help="热词榜 / 趋势 / 新词发现")
-    s.add_argument("--days", type=int, default=30)
+    s.add_argument("--days", type=int, default=None)
+    s.add_argument(
+        "--window", default=None,
+        help="窗口预设: 3m / 6m / 1y / 3y / 5y / all（优先于 --days）",
+    )
     s.add_argument("--min-score", type=float, default=0.0)
     s.add_argument("--top", type=int, default=30)
-    s.add_argument("--trend", action="store_true")
-    s.add_argument("--bucket", choices=["day", "week", "month"], default="week")
+    s.add_argument("--periods", type=int, default=14, help="演变矩阵最多显示几个时段")
+    s.add_argument("--trend", action="store_true", help="显示「词 × 时段」演变矩阵")
+    s.add_argument(
+        "--bucket", choices=["auto", "day", "week", "month", "quarter", "year"],
+        default="auto", help="时段粒度（不指定时按窗口自动选）",
+    )
     s.add_argument("--discover", action="store_true", help="发现词库外的新提法")
     s.set_defaults(func=cmd_hot)
 
@@ -395,6 +515,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "end", None) is None and args.cmd == "backfill":
+        from .utils import now_cn
+
+        args.end = now_cn().date().isoformat()
     setup_logging(args.verbose)
     return args.func(args)
 

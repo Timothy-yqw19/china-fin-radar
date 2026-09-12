@@ -64,7 +64,9 @@ def test_scoring_policy_news_high():
         summary="为保持流动性充裕，人民银行决定降准，释放长期资金。",
     )
     score_and_tag(it)
-    assert it.policy_score >= 60
+    # 去掉"人民银行/中国人民银行"这类子串重复计分后, 这条是 57.5 分
+    # (政策动作类动词一个都没有, 本来就该低于"印发/通知"类文件)
+    assert it.policy_score >= 55
     assert "货币政策" in it.tags
     assert it.impact, "应该给出传导逻辑"
 
@@ -257,3 +259,160 @@ def test_discover_new_words_filters_noise():
     # 碎片(更长的词几乎同样常见时会顶掉短的)、日期碎片、单位都不该出现
     for junk in ("式逆回购", "回购操作", "日下午", "日报道", "亿元", "1500"):
         assert junk not in words, f"碎片词混进去了: {junk}"
+
+
+# ---------------------------------------------------------------- 时间窗口与多周期统计
+
+def test_window_presets():
+    from datetime import date
+
+    from finradar.analysis.periods import parse_window, resolve_window
+
+    assert parse_window("3m") == 90
+    assert parse_window("6m") == 182
+    assert parse_window("1y") == 365
+    assert parse_window("5y") == 1826
+    assert parse_window("90d") == 90
+    assert parse_window("2w") == 14
+    assert parse_window("all") is None
+    with pytest.raises(ValueError):
+        parse_window("半年")
+
+    today = date(2026, 9, 13)
+    since, label, span = resolve_window("1y", today=today)
+    assert since == "2025-09-13" and span == 365 and "1 年" in label
+    # --window 优先于 --days
+    assert resolve_window("3m", 999, today=today)[2] == 90
+    # 都不给时默认 30 天
+    assert resolve_window(None, None, today=today)[2] == 30
+    assert resolve_window("all", None, today=today)[0] is None
+
+
+def test_auto_bucket_gets_coarser_with_window():
+    """用户的原话是"以天为时间看太琐碎了" —— 长窗口必须自动换粗粒度。"""
+    from finradar.analysis.periods import auto_bucket
+
+    assert auto_bucket(7) == "week"
+    assert auto_bucket(90) == "month"
+    assert auto_bucket(182) == "month"
+    assert auto_bucket(365) == "month"
+    assert auto_bucket(1095) == "quarter"
+    assert auto_bucket(1826) == "year"
+    assert auto_bucket(None) == "year"
+
+
+def test_period_key_and_fill():
+    from finradar.analysis.periods import fill_periods, iter_periods, period_key
+
+    assert period_key("2026-09-13", "month") == "2026-09"
+    assert period_key("2026-09-13", "quarter") == "2026-Q3"
+    assert period_key("2026-09-13", "year") == "2026"
+    assert period_key("2026-09-13", "day") == "2026-09-13"
+    assert period_key("2026-01-05", "quarter") == "2026-Q1"
+
+    # 中间缺月份要补齐, 否则演变矩阵会"跳月"
+    assert fill_periods(["2026-03", "2026-06"], "month") == [
+        "2026-03", "2026-04", "2026-05", "2026-06",
+    ]
+    assert fill_periods(["2024-Q3", "2025-Q1"], "quarter") == [
+        "2024-Q3", "2024-Q4", "2025-Q1",
+    ]
+    assert fill_periods(["2024", "2026"], "year") == ["2024", "2025", "2026"]
+
+    segs = list(iter_periods("2024-11-01", "2025-02-15", "quarter"))
+    assert [s[0] for s in segs] == ["2024-Q4", "2025-Q1"]
+    assert segs[0][1] == "2024-11-01" and segs[0][2] == "2024-12-31"
+    assert segs[1][2] == "2025-02-15"  # 最后一段截到结束日
+    years = list(iter_periods("2021-01-01", "2023-06-30", "year"))
+    assert [y[0] for y in years] == ["2021", "2022", "2023"]
+    assert years[-1][2] == "2023-06-30"
+
+
+def test_trend_matrix_and_render():
+    from finradar.analysis.hotwords import display_width, render_trend, trend_matrix
+
+    rows = [
+        {"title": "金融强国与五篇大文章", "summary": "", "pub_date": "2021-03-01",
+         "tags": [], "hotwords": []},
+        {"title": "金融强国", "summary": "", "pub_date": "2023-05-01",
+         "tags": [], "hotwords": []},
+        {"title": "金融强国 五篇大文章", "summary": "", "pub_date": "2024-06-01",
+         "tags": [], "hotwords": []},
+    ]
+    keys, out = trend_matrix(rows, bucket="year", top=5, periods=8)
+    assert keys == ["2021", "2022", "2023", "2024"]
+    words = {w: c for w, c in out}
+    assert words["金融强国"] == [1, 0, 1, 1]
+
+    txt = render_trend(rows, bucket="year", top=5, periods=8)
+    lines = [ln for ln in txt.splitlines() if ln.strip()]
+    assert "2021" in lines[0] and "2024" in lines[0]
+    # 表头与数据行必须在同一列开始数字列: 用显示宽度(中文算 2 列)校验
+    width = max(display_width(ln) for ln in lines if "·" in ln or "1" in ln)
+    assert width > 0
+    starts = set()
+    for ln in lines[2:]:
+        for ch in ("·", "1"):
+            idx = ln.find(ch)
+            if idx > 0:
+                starts.add(display_width(ln[:idx]))
+                break
+    assert len(starts) <= 3, f"矩阵列没对齐: {starts}"
+
+
+def test_report_time_grouping():
+    from finradar.analysis.periods import period_key
+    from finradar.analysis.report import _group_by_time
+
+    rows = [
+        {"title": f"文件{i}", "pub_date": d, "policy_score": 50 + i, "tags": [],
+         "hotwords": [], "summary": "", "url": ""}
+        for i, d in enumerate(["2025-12-01", "2024-06-01", "2025-03-05"])
+    ]
+    groups = _group_by_time(rows, "year")
+    assert [k for k, _ in groups] == ["2024", "2025"]  # 按时间正序
+    assert period_key("2025-03-05", "year") == "2025"
+
+    md = build_markdown(rows, title="回顾", group_by="time", bucket="year")
+    assert "热词演变" in md and "分年回顾" in md
+    html = build_html(rows, title="回顾", group_by="time", bucket="year")
+    assert "trend" in html and "分年回顾" in html
+
+
+def test_keyword_substring_not_double_counted():
+    """'中国人民银行'命中时不该再把'人民银行'算一次; 债券回购不该算成上市公司回购。"""
+    it = NewsItem(
+        source="gov", source_name="政府网",
+        title="中国人民银行 中国证监会 国家外汇局公告〔2025〕第21号",
+        summary="就境外机构投资者开展债券回购业务有关事项公告。",
+    )
+    score_and_tag(it)
+    assert "人民银行" not in it.hotwords, it.hotwords
+    assert "中国人民银行" in it.hotwords
+    # 债券回购的语境下不该套用"上市公司回购"的传导逻辑
+    assert "股东回报" not in (it.impact or "")
+
+    listed = NewsItem(
+        source="em_flash", source_name="快讯",
+        title="某公司拟以注销式回购提升股东回报",
+    )
+    score_and_tag(listed)
+    assert "股东回报" in (listed.impact or "")
+
+
+def test_synonym_terms_merged_in_hotwords():
+    from finradar.analysis.hotwords import _merge_substring_terms
+    from collections import Counter
+
+    cnt = Counter({
+        '金融"五篇大文章"': 65,   # 词库口径的主词
+        "五篇大文章": 20,          # 被长词完全覆盖 → 丢掉
+        "逆回购": 15,              # 次数高于长词, 说明有独立语境 → 保留
+        "买断式逆回购": 10,
+        "金融强国": 10,
+    })
+    merged = _merge_substring_terms(cnt)
+    assert "五篇大文章" not in merged
+    assert merged['金融"五篇大文章"'] == 65
+    assert "逆回购" in merged and merged["逆回购"] == 15
+    assert merged["金融强国"] == 10

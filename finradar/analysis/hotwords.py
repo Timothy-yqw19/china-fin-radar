@@ -80,38 +80,107 @@ def combined_hotwords(rows: list[dict]) -> Counter:
     for cat in ("monetary", "capital_market", "banking", "opening", "theme"):
         allow.update((rules.get(cat) or {}).get("words") or [])
 
+    # 规则词如果本身就是词库的别名(如 适度宽松 → 适度宽松的货币政策),
+    # 记两遍会让热词榜出现"同一个概念两个条目", 这里只留词库口径
+    gloss_names = {n for t in load_glossary() for n in t.all_names}
+
     cnt = match_glossary(f"{r.get('title', '')} {r.get('summary', '')}" for r in rows)
     for r in rows:
         for w in r.get("hotwords") or []:
-            if w in allow:
+            if w in allow and w not in gloss_names:
                 cnt[w] += 1
-    return cnt
+    return _merge_substring_terms(cnt)
+
+
+def _merge_substring_terms(cnt: Counter) -> Counter:
+    """合并互为子串的同义条目, 只保留更具体的那个.
+
+    "适度宽松"(规则词) 和 "适度宽松的货币政策"(词库词) 是一回事,
+    "中长期资金 / 中长期资金入市 / 长期资金入市" 也是一回事, 同时上榜会让人
+    以为统计口径有问题。只在"短词次数 ≤ 长词次数"时才合并 —— 说明短词的
+    每一次出现都能被长词解释掉; 否则(比如 逆回购 15 次 vs 买断式逆回购 10 次)
+    说明有一部分出现是独立语境, 两个都保留。
+    """
+    out: Counter = Counter()
+    for w, n in cnt.most_common():
+        if any(w != o and w in o and n <= c for o, c in out.items()):
+            continue
+        out[w] = n
+    return out
 
 
 def glossary_trend(rows: list[dict], bucket: str = "week") -> dict[str, Counter]:
     """按时间桶统计词库热词, 返回 {桶: Counter}."""
+    from .periods import period_key
+
     out: dict[str, Counter] = defaultdict(Counter)
     for r in rows:
         d = (r.get("pub_date") or "")[:10]
         if not d:
             continue
-        if bucket == "month":
-            key = d[:7]
-        elif bucket == "day":
-            key = d
-        else:  # week -> ISO 周
-            from datetime import date
-
-            try:
-                y, m, dd = (int(x) for x in d.split("-"))
-                iso = date(y, m, dd).isocalendar()
-                key = f"{iso[0]}-W{iso[1]:02d}"
-            except Exception:  # noqa: BLE001
-                key = d
+        key = period_key(d, bucket)
         text = f"{r.get('title','')} {r.get('summary','')}"
         for w, n in match_glossary([text]).items():
             out[key][w] += n
     return dict(out)
+
+
+def display_width(s: str) -> int:
+    """终端显示宽度: 中日韩字符算 2 列, 其余算 1 列.
+
+    不加这个, 演变矩阵里中文词和数字列会错位(f-string 的 :<20 只数字符个数)。
+    这里按"非 ASCII 一律 2 列"处理: 中文终端下全角引号、全角括号也都是 2 列,
+    用 unicodedata 的 ambiguous 分类反而不准。
+    """
+    return sum(1 if ord(ch) < 128 else 2 for ch in s or "")
+
+
+def pad_display(s: str, width: int) -> str:
+    return (s or "") + " " * max(0, width - display_width(s))
+
+
+def trend_matrix(
+    rows: list[dict],
+    bucket: str = "year",
+    top: int = 12,
+    periods: int = 12,
+) -> tuple[list[str], list[tuple[str, list[int]]]]:
+    """热词 × 周期 的计数矩阵, 用于看"演变"而不是看某一天.
+
+    返回 (周期列表, [(词, [各周期次数...]), ...])。
+    词按总次数排序; 周期取最近 periods 个(按时间正序)。
+    """
+    from .periods import fill_periods
+
+    trend = glossary_trend(rows, bucket=bucket)
+    # 补齐中间没有数据的周期, 否则时间线会"跳月", 看着像断了
+    keys = fill_periods(list(trend), bucket, limit=periods)
+    total: Counter = Counter()
+    for k in keys:
+        total.update(trend.get(k) or Counter())
+    out: list[tuple[str, list[int]]] = []
+    for w, _ in total.most_common(top):
+        out.append((w, [(trend.get(k) or Counter()).get(w, 0) for k in keys]))
+    return keys, out
+
+
+def render_trend(rows: list[dict], bucket: str = "year", top: int = 12, periods: int = 12) -> str:
+    """把矩阵渲染成对齐的文本表 (热词 × 周期), 周期多时比逐桶罗列好读得多."""
+    from .periods import BUCKET_LABEL
+
+    keys, rows_out = trend_matrix(rows, bucket=bucket, top=top, periods=periods)
+    if not keys or not rows_out:
+        return "（窗口内没有词库热词命中）"
+    width = max(16, max(display_width(w) for w, _ in rows_out) + 2)
+    col = max(8, max(len(k) for k in keys) + 2)
+    head = pad_display("词", width) + "".join(f"{k:>{col}}" for k in keys)
+    lines = [head, "-" * display_width(head)]
+    for w, counts in rows_out:
+        cells = "".join(f"{(str(c) if c else '·'):>{col}}" for c in counts)
+        lines.append(pad_display(w, width) + cells)
+    lines.append("")
+    lines.append(f"（粒度：{BUCKET_LABEL.get(bucket, bucket)}；· 表示该周期 0 次）")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- 发现口径

@@ -167,8 +167,12 @@ class Store:
                     "GROUP BY source ORDER BY n DESC"
                 ).fetchall()
             }
-            latest = c.execute("SELECT MAX(pub_date) FROM news").fetchone()[0]
-        return {"total": total, "by_source": by_src, "latest": latest}
+            # NULLIF: 少数列表页没给日期(pub_date 存成空串), 不该污染"最早日期"
+            row = c.execute(
+                "SELECT MAX(NULLIF(pub_date,'')), MIN(NULLIF(pub_date,'')) FROM news"
+            ).fetchone()
+            latest, earliest = row[0], row[1]
+        return {"total": total, "by_source": by_src, "latest": latest, "earliest": earliest}
 
     # ------------------------------------------------------------ 错题本
     def log_quiz(self, qid: str, board: str, correct: bool) -> None:

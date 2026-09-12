@@ -331,3 +331,33 @@ def test_extract_date_variants():
     assert extract_date("没有任何日期", "") == ""
     assert strip_trailing_date("协会举办培训09-02") == "协会举办培训"
     assert strip_trailing_date("正常标题") == "正常标题"
+
+
+def test_gov_fetch_range_uses_date_window_and_pages():
+    """历史回捞: 必须带上 mintime/maxtime, 且该页没有新条目就停止翻页。"""
+    calls: list[dict] = []
+
+    class RangeFetcher:
+        def get_json(self, url, **kw):
+            params = kw.get("params") or {}
+            calls.append(params)
+            if params.get("p") == 1:
+                return GOV_REAL_JSON
+            return {"searchVO": {"catMap": {}}}
+
+    c = GovPolicyCrawler(fetcher=RangeFetcher(), pages=1)
+    items = c.fetch_range("2024-01-01", "2024-12-31", queries=["金融"], max_pages=3)
+    assert len(items) == 1
+    assert len(calls) == 2, "第 2 页为空后应该停止翻页"
+    first = calls[0]
+    assert first["mintime"] == "2024-01-01" and first["maxtime"] == "2024-12-31"
+    assert first["timetype"] == "timezd"
+    assert first["n"] == 50
+    assert "searchfield" not in first, "历史回捞默认走全文检索, 不该限制在标题"
+
+    # --search title 时应当带上 searchfield
+    calls.clear()
+    GovPolicyCrawler(fetcher=RangeFetcher(), pages=1).fetch_range(
+        "2024-01-01", "2024-12-31", queries=["金融"], max_pages=1, searchfield="title"
+    )
+    assert calls[0]["searchfield"] == "title"

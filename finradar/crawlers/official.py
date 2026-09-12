@@ -183,6 +183,8 @@ class GovPolicyCrawler(BaseCrawler):
 
     API = "https://sousuo.www.gov.cn/search-gov/data"
     QUERIES = ["金融", "货币政策", "资本市场", "银行", "保险", "债券", "基金"]
+    # 历史回捞用的宽口径关键词(全文检索), 覆盖"标题里没写金融但内容是金融"的文件
+    HISTORY_QUERIES = ["金融", "货币政策", "资本市场"]
 
     @staticmethod
     def _cat_map(data: dict | None) -> dict:
@@ -193,48 +195,102 @@ class GovPolicyCrawler(BaseCrawler):
         return sv.get("catMap") or data.get("catMap") or {}
 
     def fetch(self) -> list[NewsItem]:
+        """日常抓取: 按关键词检索, 只要标题命中的(精度优先), 结果里最新的在前."""
         out: list[NewsItem] = []
         seen: set[str] = set()
         for q in self.QUERIES:
             for page in range(1, self.pages + 1):
-                data = self.f.get_json(
-                    self.API,
-                    params={
-                        "t": "zhengcelibrary",
-                        "q": q,
-                        "p": page,
-                        "n": 20,
-                        "sort": "pubtime",
-                        "sortType": 1,
-                        "searchfield": "title",
-                        "timetype": "timezd",
-                    },
-                    referer=self.homepage,
-                )
-                cat = self._cat_map(data)
+                items, cat = self._query(q, page, searchfield="title")
                 before = len(out)
-                for _, block in cat.items():
-                    for r in (block or {}).get("listVO") or []:
-                        url = r.get("url") or ""
-                        if not url or url in seen:
-                            continue
-                        seen.add(url)
-                        puborg = (r.get("puborg") or "").strip()
-                        out.append(
-                            self.item(
-                                title=r.get("title") or "",
-                                url=url,
-                                published_at=parse_time(
-                                    (r.get("pubtimeStr") or "").replace(".", "-")
-                                ),
-                                summary=(r.get("summary") or "")[:300],
-                                # 把发文机关放进 channel: 打分规则里的"发文主体"能命中,
-                                # 报告里也能直接看到是谁发的文
-                                channel=f"政策文件·{puborg}" if puborg else "政策文件",
-                                doc_no=r.get("pcode") or r.get("wenhao") or "",
-                            )
-                        )
+                for it in items:
+                    if it.url and it.url not in seen:
+                        seen.add(it.url)
+                        out.append(it)
                 if len(out) == before:  # 该页没有新内容, 不再翻页
+                    break
+        return out
+
+    # ------------------------------------------------------------ 历史回捞
+
+    def _query(
+        self,
+        q: str,
+        page: int,
+        searchfield: str | None = "title",
+        mintime: str | None = None,
+        maxtime: str | None = None,
+        page_size: int = 20,
+    ) -> tuple[list[NewsItem], dict]:
+        params: dict = {
+            "t": "zhengcelibrary",
+            "q": q,
+            "p": page,
+            "n": page_size,
+            "sort": "pubtime",
+            "sortType": 1,
+            "timetype": "timezd",
+        }
+        if searchfield:
+            params["searchfield"] = searchfield
+        # 政策库支持按日精确取历史: mintime/maxtime (timetype=timezd)
+        if mintime:
+            params["mintime"] = mintime
+        if maxtime:
+            params["maxtime"] = maxtime
+        data = self.f.get_json(self.API, params=params, referer=self.homepage)
+        cat = self._cat_map(data)
+        items: list[NewsItem] = []
+        for _, block in cat.items():
+            for r in (block or {}).get("listVO") or []:
+                url = r.get("url") or ""
+                if not url:
+                    continue
+                puborg = (r.get("puborg") or "").strip()
+                items.append(
+                    self.item(
+                        title=r.get("title") or "",
+                        url=url,
+                        published_at=parse_time((r.get("pubtimeStr") or "").replace(".", "-")),
+                        summary=(r.get("summary") or "")[:300],
+                        # 发文机关进 channel: 打分规则的"发文主体"能命中, 报告里也能看到是谁发的文
+                        channel=f"政策文件·{puborg}" if puborg else "政策文件",
+                        doc_no=r.get("pcode") or r.get("wenhao") or "",
+                    )
+                )
+        return items, cat
+
+    def fetch_range(
+        self,
+        start: str,
+        end: str,
+        queries: list[str] | None = None,
+        max_pages: int = 4,
+        searchfield: str | None = None,
+        page_size: int = 50,
+        progress=None,  # noqa: ANN001
+    ) -> list[NewsItem]:
+        """按日期范围回捞历史政策文件.
+
+        全文检索(searchfield=None)能捞到标题里没有关键词的文件, 覆盖更广;
+        max_pages 是对"每个关键词在每个时段"的翻页上限, 用来控制总请求量。
+        """
+        out: list[NewsItem] = []
+        seen: set[str] = set()
+        for q in queries or self.HISTORY_QUERIES:
+            for page in range(1, max_pages + 1):
+                items, cat = self._query(
+                    q, page, searchfield=searchfield,
+                    mintime=start, maxtime=end, page_size=page_size,
+                )
+                fresh = 0
+                for it in items:
+                    if it.url and it.url not in seen:
+                        seen.add(it.url)
+                        out.append(it)
+                        fresh += 1
+                if progress:
+                    progress(q, page, len(items), fresh, len(out), cat)
+                if not items or fresh == 0:
                     break
         return out
 

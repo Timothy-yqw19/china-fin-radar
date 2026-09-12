@@ -92,7 +92,40 @@ def _group(rows: list[dict]) -> dict[str, list[dict]]:
     return buckets
 
 
-def build_markdown(rows: list[dict], title: str = "金融政策日报", top_hot: int = 15) -> str:
+def _group_by_time(rows: list[dict], bucket: str) -> list[tuple[str, list[dict]]]:
+    """按时段分组(年/季/月/周), 时段按时间正序 —— 长窗口的"回顾"要靠它."""
+    from .periods import period_key, period_sort_key
+
+    buckets: dict[str, list[dict]] = {}
+    for r in rows:
+        key = period_key((r.get("pub_date") or "")[:10], bucket)
+        if not key:
+            continue
+        buckets.setdefault(key, []).append(r)
+    return [
+        (k, sorted(v, key=lambda x: (-float(x.get("policy_score") or 0), x.get("pub_date") or "")))
+        for k, v in sorted(buckets.items(), key=lambda kv: period_sort_key(kv[0]))
+    ]
+
+
+def _coverage(rows: list[dict]) -> str:
+    """数据覆盖区间 —— 长窗口特别需要, 否则"近 5 年"里其实只有 1 年数据是看不出来的."""
+    dates = sorted((r.get("pub_date") or "")[:10] for r in rows if (r.get("pub_date") or ""))
+    if not dates:
+        return ""
+    if dates[0] == dates[-1]:
+        return dates[0]
+    return f"{dates[0]} ~ {dates[-1]}"
+
+
+def build_markdown(
+    rows: list[dict],
+    title: str = "金融政策日报",
+    top_hot: int = 15,
+    group_by: str = "issue",
+    bucket: str = "month",
+    top_per_period: int = 8,
+) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
     rows = dedupe_rows(rows)
@@ -100,6 +133,13 @@ def build_markdown(rows: list[dict], title: str = "金融政策日报", top_hot:
     sub = f"> 生成时间 {now}（北京时间） · 共 {len(rows)} 条"
     if raw_n != len(rows):
         sub += f"（已合并 {raw_n - len(rows)} 条跨源重复）"
+    coverage = _coverage(rows)
+    if coverage:
+        sub += f" · 数据覆盖 {coverage}"
+    if group_by == "time":
+        from .periods import BUCKET_LABEL
+
+        sub += f" · 按时段整理（{BUCKET_LABEL.get(bucket, bucket)}）"
     lines = [f"# {title}", "", sub, ""]
 
     if hot:
@@ -111,6 +151,49 @@ def build_markdown(rows: list[dict], title: str = "金融政策日报", top_hot:
         for i, (w, n) in enumerate(hot.most_common(top_hot), 1):
             lines.append(f"| {i} | {w} | {n} |")
         lines.append("")
+
+    # ---- 长窗口: 先给"演变矩阵", 再按年/季/月回顾 ----
+    if group_by == "time":
+        from .hotwords import render_trend
+        from .periods import BUCKET_LABEL
+
+        lines += ["## 二、热词演变（词 × 时段）", "", "```"]
+        lines.append(render_trend(rows, bucket=bucket, top=15, periods=14))
+        lines += ["```", ""]
+        lines += [f"## 三、分{BUCKET_LABEL.get(bucket, bucket)}回顾", ""]
+        for key, items in _group_by_time(rows, bucket):
+            period_hot = combined_hotwords(items).most_common(6)
+            lines.append(f"### {key}（{len(items)} 条）")
+            lines.append("")
+            if period_hot:
+                lines.append("热点词汇：" + "、".join(f"{w}({n})" for w, n in period_hot))
+                lines.append("")
+            for r in items[:top_per_period]:
+                date = (r.get("pub_date") or "")[:10]
+                src = r.get("source_name") or r.get("source")
+                t = r.get("title") or ""
+                url = r.get("url") or ""
+                lines.append(f"- **[{t}]({url})**" if url else f"- **{t}**")
+                meta = f"  - {date} · {src} · 政策分 {r.get('policy_score')}"
+                if r.get("doc_no"):
+                    meta += f" · {r['doc_no']}"
+                lines.append(meta)
+                if r.get("hotwords"):
+                    lines.append(f"  - 命中热词：{'、'.join(r['hotwords'][:8])}")
+                if r.get("impact"):
+                    lines.append(f"  - 传导逻辑：{r['impact']}")
+            lines.append("")
+        lines += [
+            "## 四、怎么用这份回顾准备面试",
+            "",
+            "1. 先看「热词演变」矩阵：哪个词在哪一年冒出来、哪一年开始高频、",
+            "   哪一年被新提法替代——这就是面试里“聊聊这几年金融政策变化”的骨架。",
+            "2. 再挑每个时段的 1-2 条头条精读，问自己三个问题：谁发的 / 改了什么 / 谁受影响。",
+            "3. 把当年出现、后来消失的词单独记一笔——被替代的提法最容易被追问“那和现在有什么区别”。",
+            "4. 用 `finradar quiz --board <板块>` 把对应考点刷一遍。",
+            "",
+        ]
+        return "\n".join(lines)
 
     lines += ["## 二、按板块梳理", ""]
     for board, items in _group(rows).items():
@@ -168,13 +251,21 @@ h3{{font-size:15px;margin:22px 0 10px;color:var(--acc)}}
 .meta{{color:var(--mut);font-size:12px;margin-top:5px}}
 .imp{{font-size:12.5px;margin-top:6px;padding-left:9px;border-left:2px solid var(--acc);color:var(--mut)}}
 .score{{float:right;font-size:12px;color:var(--acc);font-weight:700}}
+pre.trend{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+ font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto;white-space:pre}}
 </style></head><body><div class="wrap">
 <h1>{title}</h1><div class="sub">{now}</div>
 {body}
 </div></body></html>"""
 
 
-def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
+def build_html(
+    rows: list[dict],
+    title: str = "金融政策日报",
+    group_by: str = "issue",
+    bucket: str = "month",
+    top_per_period: int = 8,
+) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
     rows = dedupe_rows(rows)
@@ -186,6 +277,51 @@ def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
             for w, n in hot.most_common(20)
         )
         parts.append(f"<h2>热词榜</h2><div class='chips'>{chips}</div>")
+
+    if group_by == "time":
+        from .hotwords import render_trend
+        from .periods import BUCKET_LABEL
+
+        parts.append("<h2>热词演变（词 × 时段）</h2>")
+        parts.append(f"<pre class='trend'>{html.escape(render_trend(rows, bucket=bucket, top=15, periods=14))}</pre>")
+        parts.append(f"<h2>分{BUCKET_LABEL.get(bucket, bucket)}回顾</h2>")
+        for key, items in _group_by_time(rows, bucket):
+            period_hot = combined_hotwords(items).most_common(6)
+            parts.append(f"<h3>{html.escape(key)}（{len(items)} 条）</h3>")
+            if period_hot:
+                chips = "".join(
+                    f'<span class="chip">{html.escape(w)} <b>{n}</b></span>' for w, n in period_hot
+                )
+                parts.append(f"<div class='chips'>{chips}</div>")
+            for r in items[:top_per_period]:
+                t = html.escape(r.get("title") or "")
+                url = html.escape(r.get("url") or "")
+                title_html = (
+                    f'<a href="{url}" target="_blank" rel="noopener">{t}</a>' if url else t
+                )
+                meta = f"{(r.get('pub_date') or '')[:10]} · {html.escape(r.get('source_name') or '')}"
+                if r.get("doc_no"):
+                    meta += " · " + html.escape(str(r["doc_no"]))
+                if r.get("hotwords"):
+                    meta += " · " + html.escape("、".join(r["hotwords"][:6]))
+                imp = (
+                    f"<div class='imp'>{html.escape(r['impact'])}</div>"
+                    if r.get("impact")
+                    else ""
+                )
+                parts.append(
+                    f"<div class='item'><span class='score'>{r.get('policy_score')}</span>"
+                    f"{title_html}<div class='meta'>{meta}</div>{imp}</div>"
+                )
+        sub = f"生成时间 {now}（北京时间） · 共 {len(rows)} 条"
+        if raw_n != len(rows):
+            sub += f"（已合并 {raw_n - len(rows)} 条跨源重复）"
+        coverage = _coverage(rows)
+        if coverage:
+            sub += f" · 数据覆盖 {coverage}"
+        sub += f" · 按时段整理（{BUCKET_LABEL.get(bucket, bucket)}）"
+        return HTML_TPL.format(title=html.escape(title), now=sub, n=len(rows), body="".join(parts))
+
     parts.append("<h2>按板块梳理</h2>")
     for board, items in _group(rows).items():
         parts.append(f"<h3>{html.escape(board)}（{len(items)}）</h3>")
@@ -213,12 +349,27 @@ def build_html(rows: list[dict], title: str = "金融政策日报") -> str:
     return HTML_TPL.format(title=html.escape(title), now=sub, n=len(rows), body="".join(parts))
 
 
-def write_report(rows: list[dict], title: str = "金融政策日报", stem: str | None = None) -> dict:
+def write_report(
+    rows: list[dict],
+    title: str = "金融政策日报",
+    stem: str | None = None,
+    group_by: str = "issue",
+    bucket: str = "month",
+    top_per_period: int = 8,
+) -> dict:
     out = workdir() / "reports"
     out.mkdir(parents=True, exist_ok=True)
     stem = stem or f"report_{now_cn():%Y%m%d}"
     md_path = out / f"{stem}.md"
     html_path = out / f"{stem}.html"
-    md_path.write_text(build_markdown(rows, title), encoding="utf-8")
-    html_path.write_text(build_html(rows, title), encoding="utf-8")
+    md_path.write_text(
+        build_markdown(rows, title, group_by=group_by, bucket=bucket,
+                       top_per_period=top_per_period),
+        encoding="utf-8",
+    )
+    html_path.write_text(
+        build_html(rows, title, group_by=group_by, bucket=bucket,
+                   top_per_period=top_per_period),
+        encoding="utf-8",
+    )
     return {"markdown": str(md_path), "html": str(html_path)}

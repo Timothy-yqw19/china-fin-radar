@@ -21,6 +21,8 @@ CATEGORY_LABEL = {
 }
 
 # 影响链模板: 命中标签 -> 一句话传导逻辑 (面试里"所以呢"的那一步)
+# 命中标签 -> 一句话传导逻辑。第三条是"排除词": 出现这些词时说明命中的是
+# 另一个语境, 不该套用这条逻辑(典型例子: 债券回购 ≠ 上市公司回购)。
 IMPACT_RULES = [
     (["降准"], "释放长期低成本资金 → 缓解银行负债成本 → 支撑信贷投放, 利好银行息差与债市短端"),
     (["降息", "LPR"], "政策利率/LPR 下行 → 贷款收益率下降、存款跟随下调 → 银行息差短期承压, 债市走强"),
@@ -30,7 +32,11 @@ IMPACT_RULES = [
     (["IPO", "注册制"], "一级市场供给节奏变化 → 影响投行业务量与二级市场承接压力"),
     (["并购重组"], "IPO 收紧下的替代退出通道 → 投行业务重心转移 → 利好券商并购业务与壳资源分化"),
     (["退市"], "出清劣质公司 → 提升指数质量 → 短期壳价值下降、投资者保护配套需跟上"),
-    (["回购", "市值管理", "增持"], "上市公司主动提升股东回报 → 支撑估值中枢, 关注是否为注销式回购"),
+    (
+        ["回购", "市值管理", "增持"],
+        "上市公司主动提升股东回报 → 支撑估值中枢, 关注是否为注销式回购",
+        ("债券回购", "逆回购", "质押式回购", "买断式回购", "回购业务", "回购交易", "回购利率"),
+    ),
     (["公募基金", "浮动费率"], "费率与考核改革 → 主动管理费收入承压 → 加速被动化与买方投顾转型"),
     (["QDII"], "出海额度是硬约束 → 额度紧张时 QDII 基金限购、场内溢价走高"),
     (["QFII", "合格境外投资者"], "流入端便利化 → 外资配置渠道拓宽 (注意: 额度已于 2019 年取消)"),
@@ -60,10 +66,22 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
     hits: list[str] = []
     routine = False
 
+    # 先把各类别的命中收集齐, 全局去掉互为子串的重复命中(见 _drop_substrings)。
+    # 必须跨类别做: "逆回购"在货币政策类、"回购"在资本市场类, 只按类别内去重
+    # 会把债券回购误算成"上市公司回购"。
+    raw: list[tuple[str, float, list[str]]] = []
     for cat, cfg in rules.items():
         w = float(cfg.get("score", 0))
         words = cfg.get("words") or []
         matched = [k for k in words if k in text]
+        if not matched:
+            continue
+        raw.append((cat, w, matched))
+
+    keep = set(_drop_substrings([k for _, _, ms in raw for k in ms]))
+    per_cat = [(cat, w, [k for k in ms if k in keep]) for cat, w, ms in raw]
+
+    for cat, w, matched in per_cat:
         if not matched:
             continue
         # 同一类别命中多个词按 1 + 0.25*(n-1) 递减计分, 且单类别最多算 2 倍权重,
@@ -93,15 +111,30 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
     item.tags = tags
     # 去重保序
     item.hotwords = list(dict.fromkeys(hits))[:12]
-    item.impact = explain_impact(item.hotwords)
+    item.impact = explain_impact(item.hotwords, text)
     return item
 
 
-def explain_impact(hotwords: list[str]) -> str:
+def _drop_substrings(matched: list[str]) -> list[str]:
+    """去掉被更长命中词包含的关键词.
+
+    "中国人民银行"命中时,"人民银行"是它的子串, 两个都算等于同一件事记两遍;
+    "逆回购"命中时更不该再算一次"回购"(那是债券回购, 不是上市公司回购)。
+    """
+    uniq = list(dict.fromkeys(matched))
+    return [w for w in uniq if not any(w != o and w in o for o in uniq)]
+
+
+def explain_impact(hotwords: list[str], text: str = "") -> str:
     hits = []
-    for keys, text in IMPACT_RULES:
-        if any(k in hotwords for k in keys):
-            hits.append(text)
+    for rule in IMPACT_RULES:
+        keys, desc = rule[0], rule[1]
+        unless = rule[2] if len(rule) > 2 else ()
+        if not any(k in hotwords for k in keys):
+            continue
+        if any(u in (text or "") for u in unless):
+            continue
+        hits.append(desc)
     return " | ".join(hits[:2])
 
 

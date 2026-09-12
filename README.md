@@ -21,6 +21,7 @@
 | 每天刷一堆财经快讯，记不住也用不上 | 给每条新闻打**政策相关度分**（0–100），只精读 ≥60 分的；每条自动附一句**传导逻辑**（"所以呢"） |
 | 知道"五篇大文章""中长期资金入市"这些词，但一被追问就露怯 | 每个词条含**考点清单 + 面试口语化答法 + 追问及应答**，不是词典释义 |
 | 背了一堆，面试时组织不出语言 | 所有答案都写成**能直接说出口的口语**，控制在 60–90 秒 |
+| 想在面试里说清"这几年金融政策有什么变化"，却没有时间线 | `finradar backfill` 回捞 2021 年以来**政策文件**，`hot --window 5y --trend` 给出**词 × 年演变矩阵**（哪个词哪年出现、哪年升温、被谁替代） |
 
 ---
 
@@ -44,8 +45,13 @@ finradar crawl --source all --pages 1
 # 生成政策日报（Markdown + 可直接打开的 HTML）
 finradar report --days 3 --min-score 55
 
-# 近 30 天热词榜 + 趋势 + 新词发现
-finradar hot --days 30 --trend --discover
+# 看长周期：回捞历史（一次性），然后按 3m/6m/1y/3y/5y 看
+finradar backfill --from 2021-01-01
+finradar hot --window 5y --trend          # 词 × 年 演变矩阵
+finradar report --window 1y --min-score 70 # 近一年的政策回顾
+
+# 近 30 天热词榜 + 新词发现
+finradar hot --days 30 --discover
 
 # 改了 config/keywords.yaml 之后，不用重抓，直接把库里已有条目重算一遍
 finradar rescore
@@ -86,6 +92,10 @@ finradar facts --keys lpr money_supply cpi
 以上 **15 个源在 2026-09-12 用 `finradar doctor` 在真实网络下逐个验证通过**，
 一轮全量抓取约 1700 条。交易所（上交所 / 深交所）**没有接入**：它们的规则列表
 是 JS 渲染的，HTML 骨架里没有数据，要抓得用 headless browser 或它们的内网 JSON 接口。
+
+**历史数据**：政策文件库支持按日期范围回捞（`finradar backfill --from 2021-01-01`，
+实测 2021—2026 每年 1000+ 份文件）；外汇局/统计局/发改委/基金业协会靠列表页翻页；
+快讯类接口**只有当天**，所以 3 年以上的"热词演变"本质上是**政策提法**的演变。
 
 **接口会变**。所以内置了 `finradar doctor` 逐源体检，并在
 `config/sources.yaml` 里提供**配置化的 HTML 列表抓取器**——
@@ -200,8 +210,9 @@ finradar/
 │   ├── flash.py         东方财富 / 财联社 / 同花顺 / 新浪
 │   └── ak_source.py     AkShare 兜底通道 + 宏观数据（含"取最新一期"的排序修正）
 ├── analysis/
+│   ├── periods.py       时间窗口(3m/6m/1y/3y/5y)与统计周期(周/月/季/年)
 │   ├── tagger.py        政策打分、标签、传导逻辑
-│   ├── hotwords.py      热词统计、趋势、新词发现
+│   ├── hotwords.py      热词统计、演变矩阵、新词发现
 │   └── report.py        日报（Markdown + 单文件 HTML）+ 跨源重复合并
 ├── knowledge/
 │   ├── glossary.py      热词库加载与检索
@@ -220,7 +231,7 @@ docs/
 ├── 秋招金融知识手册.md     考点手册（由词库/题库生成）
 └── 金融热词演变分析.md     热词演变的手写分析
 scripts/demo_seed.py     离线演示
-tests/                   132 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告
+tests/                   151 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -229,7 +240,7 @@ tests/                   132 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 132 passed
+pytest -q            # 151 passed
 ruff check .
 ```
 
