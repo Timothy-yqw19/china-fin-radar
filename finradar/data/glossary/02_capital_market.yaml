@@ -1,4 +1,5 @@
 # 金融热词库 · 资本市场与证券行业
+# schema 见 docs/GLOSSARY_SCHEMA.md（字段含义 / 必备项 / 校验规则）
 category: 资本市场与证券行业
 terms:
 

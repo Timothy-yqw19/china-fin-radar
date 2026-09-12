@@ -1,5 +1,5 @@
 # 金融热词库 · 宏观与货币政策
-# schema 见 docs/GLOSSARY_SCHEMA.md
+# schema 见 docs/GLOSSARY_SCHEMA.md（字段含义 / 必备项 / 校验规则）
 # heat: 1-5，5 = 2026 秋招几乎必问
 # 数据快照类数字均标注 as_of，使用前请用 `finradar facts` 拉取最新值
 
