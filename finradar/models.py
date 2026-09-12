@@ -107,3 +107,32 @@ class Question:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class Insight:
+    """专题洞察: 一个议题的脉络 + 现状 + 各主体可能的动作.
+
+    和 Term(热词) 的分工:
+      Term    回答"这个词是什么、考点是什么" —— 静态知识
+      Insight 回答"这条路怎么走到今天的、接下来各方可能做什么" —— 动态判断
+
+    展望部分一律写成"触发条件 → 可能动作 → 时间窗", 而不是无条件的预测,
+    因为政策展望的价值在于说清"看到什么信号说明它要来了"。
+    """
+
+    id: str
+    topic: str
+    category: str = ""
+    thesis: str = ""  # 一句话核心判断
+    actors: list[str] = field(default_factory=list)  # 涉及的主体: 监管/公募/券商/银行/外资…
+    keywords: list[str] = field(default_factory=list)  # 用来关联库里的新闻与政策
+    timeline: list[dict] = field(default_factory=list)  # [{when, event, source}]
+    snapshot: list[dict] = field(default_factory=list)  # [{label, value, as_of}]
+    outlook: list[dict] = field(default_factory=list)  # [{actor, action, trigger, horizon}]
+    watchlist: list[str] = field(default_factory=list)  # 观察指标/信号
+    interview_take: str = ""  # 60-90 秒口语化
+    related_terms: list[str] = field(default_factory=list)  # 关联的热词
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

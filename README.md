@@ -22,6 +22,7 @@
 | 知道"五篇大文章""中长期资金入市"这些词，但一被追问就露怯 | 每个词条含**考点清单 + 面试口语化答法 + 追问及应答**，不是词典释义 |
 | 背了一堆，面试时组织不出语言 | 所有答案都写成**能直接说出口的口语**，控制在 60–90 秒 |
 | 想在面试里说清"这几年金融政策有什么变化"，却没有时间线 | `finradar backfill` 回捞 2021 年以来**政策文件**，`hot --window 5y --trend` 给出**词 × 年演变矩阵**（哪个词哪年出现、哪年升温、被谁替代） |
+| 只看到一条条新闻，串不成"这条路怎么走到今天、接下来会怎样" | **专题洞察**：每条主线给足脉络（人工 + 从库里自动聚合）+ 现状快照 + **各主体（监管/公募/券商/银行/保险/外资）可能的动作（带触发条件）** + 该盯哪些信号 |
 
 ---
 
@@ -58,6 +59,11 @@ finradar rescore
 
 # 查一个词的完整解析
 finradar term QDII
+
+# 专题洞察：这条线怎么走到今天、各方接下来可能做什么
+finradar insights
+finradar insight QDII
+finradar report --window 1y --insights      # 报告末尾附上相关专题
 
 # 刷题（10 题，随机；只刷错题加 --wrong）
 finradar quiz -n 10
@@ -216,11 +222,13 @@ finradar/
 │   └── report.py        日报（Markdown + 单文件 HTML）+ 跨源重复合并
 ├── knowledge/
 │   ├── glossary.py      热词库加载与检索
+│   ├── insights.py      专题洞察库（脉络 / 现状 / 未来动作）
 │   ├── qbank.py         题库加载与检索
 │   └── quiz.py          刷题引擎、错题本
 └── data/
-    ├── glossary/*.yaml  热词库
-    └── questions/*.yaml 题库
+    ├── glossary/*.yaml  热词库（46 个词条）
+    ├── insights/*.yaml  专题洞察（6 条主线）
+    └── questions/*.yaml 题库（62 道题）
 config/
 ├── keywords.yaml        打分规则（改这里就能调打分口径）
 └── sources.yaml         配置化扩展数据源（不用写代码）
@@ -231,7 +239,7 @@ docs/
 ├── 秋招金融知识手册.md     考点手册（由词库/题库生成）
 └── 金融热词演变分析.md     热词演变的手写分析
 scripts/demo_seed.py     离线演示
-tests/                   151 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   162 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -240,7 +248,7 @@ tests/                   151 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 151 passed
+pytest -q            # 162 passed
 ruff check .
 ```
 

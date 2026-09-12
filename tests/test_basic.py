@@ -416,3 +416,100 @@ def test_synonym_terms_merged_in_hotwords():
     assert merged['金融"五篇大文章"'] == 65
     assert "逆回购" in merged and merged["逆回购"] == 15
     assert merged["金融强国"] == 10
+
+
+# ---------------------------------------------------------------- 专题洞察
+
+def test_insights_load():
+    from finradar.knowledge import insights as I
+
+    items = I.load_insights()
+    assert len(items) >= 4, "专题太少"
+    ids = [i.id for i in items]
+    assert len(ids) == len(set(ids)), "专题 id 重复"
+
+
+@pytest.mark.parametrize("it", __import__("finradar.knowledge.insights", fromlist=["x"]).load_insights(),
+                         ids=lambda t: t.id)
+def test_insight_fields(it):
+    """专题必须能回答"脉络是什么、现状如何、各方接下来可能做什么"。"""
+    assert it.topic and it.thesis, f"{it.id} 缺 topic/thesis"
+    assert len(it.actors) >= 2, f"{it.id} 主体太少"
+    assert len(it.keywords) >= 3, f"{it.id} 关键词太少（无法关联库内新闻）"
+    assert len(it.timeline) >= 3, f"{it.id} 脉络太短"
+    for ev in it.timeline:
+        assert ev.get("when") and ev.get("event"), f"{it.id} 脉络缺少时间或事件"
+    assert len(it.outlook) >= 3, f"{it.id} 展望太短"
+    for o in it.outlook:
+        assert o.get("actor") and o.get("action"), f"{it.id} 展望缺少主体或动作"
+    assert it.watchlist, f"{it.id} 没有观察信号"
+    assert len(it.interview_take) >= 120, f"{it.id} 面试口径太短"
+
+
+def test_insight_related_terms_exist_in_glossary():
+    """专题里引用的热词必须真实存在, 否则"关联热词"会指向空气。"""
+    from finradar.knowledge import insights as I
+
+    names = {t.term for t in G.load_glossary()}
+    for it in I.load_insights():
+        for term in it.related_terms:
+            assert term in names, f"{it.id} 引用了不存在的热词: {term}"
+
+
+def test_insight_lookup_and_match():
+    from finradar.analysis.insights import match_insights
+    from finradar.knowledge import insights as I
+
+    assert I.get("QDII") is not None            # 按关键词
+    assert I.get("crossborder-qdii-qfii") is not None  # 按 id
+    assert I.get("跨境投资开放").id == "crossborder-qdii-qfii"
+    assert I.get("不存在的东西") is None
+
+    matched = match_insights(
+        "外汇局发放 QDII 额度，互联互通扩容，QFII 备案", I.load_insights()
+    )
+    assert matched and matched[0].id == "crossborder-qdii-qfii"
+
+
+def test_insight_corpus_join_filters_junk():
+    """低分快讯('算力互联互通')和 demo 假数据都不该进专题脉络。"""
+    from finradar.analysis.insights import corpus_timeline, related_rows
+    from finradar.knowledge import insights as I
+
+    it = I.get("QDII")
+    rows = [
+        {"title": "外汇局发放新一轮 QDII 额度", "summary": "", "pub_date": "2026-08-31",
+         "policy_score": 70, "url": "https://safe.gov.cn/x", "doc_no": ""},
+        {"title": "国家算力互联互通节点启用", "summary": "", "pub_date": "2026-09-12",
+         "policy_score": 8, "url": "https://news/x", "doc_no": ""},          # 低分噪声
+        {"title": "外汇局发放 QDII 额度", "summary": "", "pub_date": "2026-08-31",
+         "policy_score": 99, "url": "https://example.invalid/4", "doc_no": ""},  # demo 假数据
+    ]
+    rel = related_rows(it, rows)
+    assert len(rel) == 1 and "safe.gov.cn" in rel[0]["url"]
+    by_year, latest = corpus_timeline(it, rows)
+    assert list(by_year) == ["2026"] and len(latest) == 1
+
+
+def test_insight_render_and_report_section():
+    from finradar.analysis.insights import render_brief, render_insight
+    from finradar.knowledge import insights as I
+
+    it = I.get("公募")
+    txt = render_insight(it, [])
+    for section in ("核心判断", "脉络（人工整理）", "现状快照", "未来可能的动作", "盯这几个信号"):
+        assert section in txt, f"渲染缺少 {section}"
+    assert "触发条件" in txt
+
+    rows = [
+        {"title": "关于印发《推动公募基金高质量发展行动方案》的通知",
+         "summary": "", "pub_date": "2025-05-07", "policy_score": 94,
+         "url": "https://csrc.gov.cn/x", "doc_no": "证监发〔2025〕21号", "tags": [], "hotwords": []},
+    ]
+    brief = render_brief(it, rows)
+    assert "公募" in brief and "未来可能的动作" in brief
+
+    md = build_markdown(rows, title="回顾", insights=[it])
+    assert "专题洞察与展望" in md and "证监发〔2025〕21号" in md
+    html = build_html(rows, title="回顾", insights=[it])
+    assert "专题洞察与展望" in html and "<li>" in html

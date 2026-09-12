@@ -2,14 +2,22 @@
 
 用途：网络不通、或者想先看看输出长什么样时使用。
     python scripts/demo_seed.py
+
+注意：默认写到 output/demo/ 而不是主库 —— 这是**假数据**（链接是 example.invalid），
+混进真实语料会让日报和专题脉络里出现不存在的新闻。
+想写进主库显式指定： FINRADAR_HOME=output python scripts/demo_seed.py
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# 必须在导入 finradar 之前设定，workdir() 是按环境变量算的
+os.environ.setdefault("FINRADAR_HOME", str(Path(__file__).resolve().parent.parent / "output" / "demo"))
 
 from finradar.analysis import annotate, combined_hotwords, write_report  # noqa: E402
 from finradar.crawlers import source_base_score  # noqa: E402

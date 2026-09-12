@@ -118,6 +118,42 @@ def _coverage(rows: list[dict]) -> str:
     return f"{dates[0]} ~ {dates[-1]}"
 
 
+def _md_to_html(md: str) -> str:
+    """极简 Markdown → HTML (只覆盖洞察渲染用到的那几种语法)."""
+    out: list[str] = []
+    in_list = False
+    for raw in (md or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("- "):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            body = _inline(line[2:])
+            out.append(f"<li>{body}</li>")
+            continue
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+        if not line:
+            continue
+        if line.startswith("### "):
+            out.append(f"<h3>{_inline(line[4:])}</h3>")
+        else:
+            out.append(f"<p>{_inline(line)}</p>")
+    if in_list:
+        out.append("</ul>")
+    return "".join(out)
+
+
+def _inline(text: str) -> str:
+    import re
+
+    s = html.escape(text)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
+    return s
+
+
 def build_markdown(
     rows: list[dict],
     title: str = "金融政策日报",
@@ -125,6 +161,7 @@ def build_markdown(
     group_by: str = "issue",
     bucket: str = "month",
     top_per_period: int = 8,
+    insights: list | None = None,
 ) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
@@ -151,6 +188,18 @@ def build_markdown(
         for i, (w, n) in enumerate(hot.most_common(top_hot), 1):
             lines.append(f"| {i} | {w} | {n} |")
         lines.append("")
+
+    if insights:
+        from .insights import render_brief
+
+        lines += ["## 专题洞察与展望", ""]
+        lines += [
+            "> 每条专题 = 这条线的来龙去脉 + 现状 + **各主体可能的动作（带触发条件）**。",
+            "> 展望是“看到什么信号说明它要来”，不是预测；详细版用 `finradar insight <专题>`。",
+            "",
+        ]
+        for it in insights:
+            lines.append(render_brief(it, rows))
 
     # ---- 长窗口: 先给"演变矩阵", 再按年/季/月回顾 ----
     if group_by == "time":
@@ -265,6 +314,7 @@ def build_html(
     group_by: str = "issue",
     bucket: str = "month",
     top_per_period: int = 8,
+    insights: list | None = None,
 ) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
@@ -277,6 +327,16 @@ def build_html(
             for w, n in hot.most_common(20)
         )
         parts.append(f"<h2>热词榜</h2><div class='chips'>{chips}</div>")
+
+    if insights:
+        from .insights import render_brief
+
+        parts.append("<h2>专题洞察与展望</h2>")
+        parts.append(
+            "<div class='sub'>每条专题 = 来龙去脉 + 现状 + 各主体可能的动作（带触发条件）</div>"
+        )
+        for it in insights:
+            parts.append(_md_to_html(render_brief(it, rows)))
 
     if group_by == "time":
         from .hotwords import render_trend
@@ -356,6 +416,7 @@ def write_report(
     group_by: str = "issue",
     bucket: str = "month",
     top_per_period: int = 8,
+    insights: list | None = None,
 ) -> dict:
     out = workdir() / "reports"
     out.mkdir(parents=True, exist_ok=True)
@@ -364,12 +425,12 @@ def write_report(
     html_path = out / f"{stem}.html"
     md_path.write_text(
         build_markdown(rows, title, group_by=group_by, bucket=bucket,
-                       top_per_period=top_per_period),
+                       top_per_period=top_per_period, insights=insights),
         encoding="utf-8",
     )
     html_path.write_text(
         build_html(rows, title, group_by=group_by, bucket=bucket,
-                   top_per_period=top_per_period),
+                   top_per_period=top_per_period, insights=insights),
         encoding="utf-8",
     )
     return {"markdown": str(md_path), "html": str(html_path)}

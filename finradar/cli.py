@@ -212,8 +212,26 @@ def cmd_report(a: argparse.Namespace) -> int:
     title = a.title or (
         f"金融政策回顾（{label}）" if group_by == "time" else f"金融政策日报（{label}）"
     )
+    insights = None
+    if a.insights:
+        from .analysis.insights import match_insights
+        from .knowledge import insights as I
+
+        # 用"窗口内的热词 + 高分标题"去找最相关的专题, 而不是硬编码
+        blob = " ".join([w for w, _ in combined_hotwords(rows).most_common(40)])
+        blob += " " + " ".join(
+            (r.get("title") or "") for r in sorted(
+                rows, key=lambda x: -float(x.get("policy_score") or 0)
+            )[:40]
+        )
+        insights = match_insights(blob, I.load_insights())[: a.insight_top]
+        if insights:
+            print("附带专题洞察：" + "；".join(i.topic for i in insights))
+        else:
+            print("（窗口内没有匹配的专题，报告不附洞察）")
     paths = write_report(
-        rows, title=title, group_by=group_by, bucket=bucket, top_per_period=a.per_period
+        rows, title=title, group_by=group_by, bucket=bucket,
+        top_per_period=a.per_period, insights=insights,
     )
     print(f"Markdown: {paths['markdown']}\nHTML:     {paths['html']}")
     return 0
@@ -234,6 +252,43 @@ def cmd_stats(a: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- 热词
+
+def cmd_insights(a: argparse.Namespace) -> int:
+    """列出所有专题洞察."""
+    from .knowledge import insights as I
+
+    items = I.search(q=a.query or "", actor=a.actor, category=a.category)
+    if not items:
+        print("没有匹配的专题。可用分类：" + " / ".join(I.categories()))
+        return 1
+    print(f"共 {len(items)} 个专题（看详情： finradar insight <专题名或关键词>）\n")
+    for it in items:
+        print(f"■ {it.topic}")
+        print(f"   id: {it.id} | 分类: {it.category} | 主体: {'/'.join(it.actors)}")
+        if it.thesis:
+            print(f"   核心判断: {it.thesis}")
+        print(f"   展望条数: {len(it.outlook)} | 关联热词: {'、'.join(it.related_terms[:3])}")
+        print()
+    return 0
+
+
+def cmd_insight(a: argparse.Namespace) -> int:
+    """渲染单个专题: 脉络(人工 + 自动聚合) / 现状 / 各主体可能的动作 / 观察信号."""
+    from .analysis.insights import render_insight
+    from .knowledge import insights as I
+
+    it = I.get(a.name)
+    if not it:
+        print(f"没找到「{a.name}」。用 finradar insights 看全部专题。")
+        return 1
+    rows: list[dict] = []
+    if not a.no_news:
+        store = Store(a.db)
+        since, _, _ = resolve_window(a.window, a.days)
+        rows = store.query(since=since, min_score=a.min_score, limit=200000)
+    print(render_insight(it, rows, per_year=a.per_year, recent=a.recent))
+    return 0
+
 
 def cmd_hot(a: argparse.Namespace) -> int:
     store = Store(a.db)
@@ -420,6 +475,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto", help="时段粒度（--group-by time 时生效）",
     )
     s.add_argument("--per-period", type=int, default=8, help="每个时段展示几条")
+    s.add_argument(
+        "--insights", action="store_true",
+        help="附带专题洞察与展望（脉络 / 现状 / 各主体可能的动作）",
+    )
+    s.add_argument("--insight-top", type=int, default=3, help="最多附几个专题")
     s.add_argument("--min-score", type=float, default=45.0)
     s.add_argument("--keyword", default=None)
     s.add_argument("--limit", type=int, default=5000)
@@ -466,6 +526,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--discover", action="store_true", help="发现词库外的新提法")
     s.set_defaults(func=cmd_hot)
+
+    s = sub.add_parser("insights", help="列出专题洞察（脉络 / 现状 / 未来动作）")
+    s.add_argument("-q", "--query", default="", help="按关键词筛选")
+    s.add_argument("--actor", default=None, help="按主体筛选，如 公募 / 券商 / 银行 / 监管")
+    s.add_argument("--category", default=None, help="按分类筛选")
+    s.set_defaults(func=cmd_insights)
+
+    s = sub.add_parser("insight", help="查看某个专题的完整洞察与展望")
+    s.add_argument("name", help="专题名或关键词，如 QDII / 公募 / 息差")
+    s.add_argument("--window", default=None, help="关联新闻的窗口（默认全部）")
+    s.add_argument("--days", type=int, default=None)
+    s.add_argument("--min-score", type=float, default=0.0)
+    s.add_argument("--per-year", type=int, default=3, help="自动脉络里每年展示几条")
+    s.add_argument("--recent", type=int, default=5, help="展示几条最新动态")
+    s.add_argument("--no-news", action="store_true", help="只看人工整理的部分，不关联库内文件")
+    s.set_defaults(func=cmd_insight)
 
     s = sub.add_parser("terms", help="检索热词库")
     s.add_argument("-q", "--query", default="")
