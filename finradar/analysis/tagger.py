@@ -58,6 +58,7 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
     tags: list[str] = []
     # 只有正向类别的命中才进热词/标签; 负向类别(噪音、例行事项)只用来扣分
     hits: list[str] = []
+    routine = False
 
     for cat, cfg in rules.items():
         w = float(cfg.get("score", 0))
@@ -68,6 +69,8 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
         # 同一类别命中多个词按 1 + 0.25*(n-1) 递减计分, 且单类别最多算 2 倍权重,
         # 避免堆砌关键词刷分
         score += w * min(2.0, 1 + 0.25 * (len(matched) - 1))
+        if cat == "routine":
+            routine = True
         if w > 0:
             hits.extend(matched)
             label = CATEGORY_LABEL.get(cat, cat)
@@ -76,10 +79,14 @@ def score_and_tag(item: NewsItem, rules: dict | None = None) -> NewsItem:
 
     # 协同加分: "官方主体 + 具体政策领域" 同时命中, 才是真正的政策新闻,
     # 单独命中"央行"(可能只是被引用)或单独命中"降准"(可能是评论)都不够。
+    # 但"举办培训班""领导会见"这类例行事项不该吃到这个加分 —— 它有发文主体、
+    # 也有具体领域, 却不是政策。
     domain_tags = {"货币政策", "资本市场", "银行保险", "对外开放"}
-    if "发文主体" in tags and domain_tags & set(tags):
+    if routine:
+        pass
+    elif "发文主体" in tags and domain_tags & set(tags):
         score += 15
-    if "政策动作" in tags and "发文主体" in tags:
+    elif "政策动作" in tags and "发文主体" in tags:
         score += 10
 
     item.policy_score = round(max(0.0, min(100.0, score)), 1)
