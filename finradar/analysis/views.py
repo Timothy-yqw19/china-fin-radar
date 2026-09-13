@@ -98,8 +98,10 @@ def pick_views(
     return pool[:top]
 
 
-def render_views_markdown(items: list[dict], title: str) -> list[str]:
-    """渲染成 Markdown 段落(带来源与日期)."""
+def render_views_markdown(
+    items: list[dict], title: str, zh: dict[str, str] | None = None
+) -> list[str]:
+    """渲染成 Markdown 段落(带来源与日期). zh 为英文标题的中文译文映射."""
     if not items:
         return []
     lines = [f"## {title}", ""]
@@ -109,5 +111,17 @@ def render_views_markdown(items: list[dict], title: str) -> list[str]:
         url = r.get("url") or ""
         t = r.get("title") or ""
         lines.append(f"- {date}　[{t}]({url})　`{src}`" if url else f"- {date}　{t}　`{src}`")
+        if zh and zh.get(t):
+            lines.append(f"  - 中文：{zh[t]}")
     lines.append("")
     return lines
+
+
+def translate_titles(items: list[dict], backend: str = "auto") -> dict[str, str]:
+    """把英文标题批量翻成中文(被缓存, 重复生成报告不再消耗额度)."""
+    if not items or backend == "none":
+        return {}
+    from ..translate import translate_many
+
+    titles = [r.get("title") or "" for r in items]
+    return translate_many(titles, backend=backend)

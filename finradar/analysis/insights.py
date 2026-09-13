@@ -98,6 +98,7 @@ def render_insight(
     rows: list[dict] | None = None,
     per_year: int = 3,
     recent: int = 5,
+    translate: str = "none",
 ) -> str:
     """渲染单个专题: 结论 → 脉络(人工 + 自动) → 现状 → 可能动作 → 观察信号 → 面试口径."""
     lines: list[str] = []
@@ -134,12 +135,18 @@ def render_insight(
 
         ext = pick_views(rows, "external", expand_keywords(list(insight.keywords)), top=5)
         if ext:
+            from ..translate import translate_many
+
+            zh = translate_many([r.get("title") or "" for r in ext], backend=translate) \
+                if translate != "none" else {}
             lines.append("■ 外部视角（海外机构与媒体怎么读）")
             for r in ext:
                 lines.append(
                     f"  {(r.get('pub_date') or '')[:10]}  {r.get('title')}"
                     f"　（{r.get('source_name') or r.get('source')}）"
                 )
+                if zh.get(r.get("title") or ""):
+                    lines.append(f"      中文：{zh[r['title']]}")
                 if r.get("url"):
                     lines.append(f"      {r['url']}")
             lines.append("")

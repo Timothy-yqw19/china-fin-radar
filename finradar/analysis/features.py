@@ -144,6 +144,8 @@ def render_feature_markdown(art: dict) -> str:
                 lines.append(f"- {d['date']}　[{d['title']}]({d['url']})　`{d['source']}`")
             else:
                 lines.append(f"- {d['date']}　{d['title']}　`{d['source']}`")
+            if d.get("zh"):
+                lines.append(f"  - 中文：{d['zh']}")
         lines.append("")
     if not art.get("sections"):
         lines += [
@@ -196,7 +198,9 @@ def render_feature_html(art: dict) -> str:
                 if d.get("url")
                 else _h.escape(d["title"] or "")
             )
-            + f"<span class='m'>{_h.escape(d['date'])} · {_h.escape(d.get('source',''))}</span></li>"
+            + f"<span class='m'>{_h.escape(d['date'])} · {_h.escape(d.get('source',''))}</span>"
+            + (f"<div class='zh'>{_h.escape(d['zh'])}</div>" if d.get("zh") else "")
+            + "</li>"
             for d in art["external"]
         )
         parts.append(f"<h3>外部视角（海外机构与媒体怎么读）</h3><ul class='docs'>{items}</ul>")

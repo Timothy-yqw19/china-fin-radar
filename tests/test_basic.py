@@ -956,3 +956,89 @@ def test_report_includes_media_and_external_sections():
     md = build_markdown(rows, title="日报", view_rows=view_rows)
     assert "媒体视角" in md and "新华社·金融" in md
     assert "外部视角" in md and "Google News" in md
+
+
+# ---------------------------------------------------------------- 海外条目的中文翻译
+
+def test_translate_many_with_cache(tmp_path, monkeypatch):
+    """翻译要缓存: 同一个标题只请求一次; 中文文本不必翻译."""
+    monkeypatch.setenv("FINRADAR_HOME", str(tmp_path))
+    import importlib
+
+    from finradar import translate as T
+
+    importlib.reload(T)
+    calls: list[str] = []
+
+    def fake(text, timeout=20):
+        calls.append(text)
+        return f"【译】{text[:10]}"
+
+    monkeypatch.setattr(T, "_mymemory", fake)
+    texts = ["China to continue capital market reform", "中国的货币政策", "PBOC sets yuan fixing"]
+    out = T.translate_many(texts, backend="mymemory")
+    assert len(out) == 2, "中文文本不该被翻译"
+    assert calls == ["China to continue capital market reform", "PBOC sets yuan fixing"]
+
+    # 第二次: 全部命中缓存, 不再请求
+    calls.clear()
+    out2 = T.translate_many(texts, backend="mymemory")
+    assert calls == [] and out2["PBOC sets yuan fixing"] == out["PBOC sets yuan fixing"]
+
+
+def test_translate_budget_guard(tmp_path, monkeypatch):
+    """公共接口有额度: 超预算就停, 而不是把请求打满."""
+    monkeypatch.setenv("FINRADAR_HOME", str(tmp_path))
+    import importlib
+
+    from finradar import translate as T
+
+    importlib.reload(T)
+    monkeypatch.setattr(T, "DAILY_CHAR_BUDGET", 10)
+    monkeypatch.setattr(T, "_mymemory", lambda t, timeout=20: "译文")
+    out = T.translate_many(["a" * 30, "b" * 30], backend="mymemory")
+    assert out == {}, "额度用满时应当跳过翻译"
+
+
+def test_is_chinese_detection():
+    from finradar.translate import _is_chinese
+
+    assert _is_chinese("中国人民银行开展买断式逆回购操作")
+    assert not _is_chinese("PBOC conducts outright reverse repo")
+    # 中英混排但以中文为主: 仍按中文处理
+    assert _is_chinese("中国人民银行开展 buyback 操作")
+
+
+def test_views_render_with_translation():
+    from finradar.analysis.views import render_views_markdown
+
+    items = [{"title": "PBOC sets yuan fixing", "url": "https://x",
+              "pub_date": "2026-09-11", "source_name": "Google News（海外媒体）"}]
+    md = "\n".join(render_views_markdown(items, "外部视角", zh={"PBOC sets yuan fixing": "央行设定人民币中间价"}))
+    assert "央行设定人民币中间价" in md and "中文：" in md
+
+
+def test_report_external_translation(tmp_path, monkeypatch):
+    """报告里的外部视角要带中文译文(用桩替换翻译接口)."""
+    monkeypatch.setenv("FINRADAR_HOME", str(tmp_path))
+    import importlib
+
+    from finradar import translate as T
+
+    importlib.reload(T)
+    monkeypatch.setattr(T, "_mymemory", lambda t, timeout=20: "央行预计将中间价设在 6.7174")
+
+    from finradar.analysis.report import build_markdown
+
+    rows = [
+        {"title": "央行开展逆回购", "summary": "货币政策", "pub_date": "2026-09-13",
+         "policy_score": 80, "tags": ["货币政策"], "hotwords": ["逆回购"], "url": "u1",
+         "source_name": "中国人民银行", "doc_no": ""},
+    ]
+    view_rows = rows + [
+        {"title": "PBOC is expected to set the USD/CNY reference rate", "summary": "",
+         "pub_date": "2026-09-12", "policy_score": 0, "tags": [], "hotwords": [], "url": "e1",
+         "source": "google_news", "source_name": "Google News（海外媒体）", "doc_no": ""},
+    ]
+    md = build_markdown(rows, title="日报", view_rows=view_rows, translate="mymemory")
+    assert "央行预计将中间价设在 6.7174" in md

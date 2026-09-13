@@ -382,6 +382,7 @@ def cmd_report(a: argparse.Namespace) -> int:
         top_per_period=a.per_period, insights=insights,
         # 媒体与外部视角单独取一遍(不套 min-score): 它们是给正文做补充说明的
         view_rows=store.query(since=since, min_score=0.0, limit=10**6),
+        translate=a.translate,
     )
     print(f"Markdown: {paths['markdown']}\nHTML:     {paths['html']}")
     return 0
@@ -583,6 +584,13 @@ def cmd_feature(a: argparse.Namespace) -> int:
     since = resolve_window(a.window, a.days)[0] if (a.window or a.days) else None
     rows = store.query(since=since, min_score=a.min_score, limit=10**6)
     art = build_feature(it, rows, min_score=max(30.0, a.min_score))
+    if a.translate != "none" and art.get("external"):
+        from .analysis.views import translate_titles
+
+        zh = translate_titles(art["external"], backend=a.translate)
+        for d in art["external"]:
+            if zh.get(d.get("title") or ""):
+                d["zh"] = zh[d["title"]]
     if a.html:
         from .analysis.insight_site import build_payload, render_site
         from .knowledge import glossary as _G
@@ -663,7 +671,7 @@ def cmd_insight(a: argparse.Namespace) -> int:
         p.write_text(render_site(payload), encoding="utf-8")
         print(f"已生成 {p}（专题 1 条 / 关联名词档案 {len(terms)} 条）")
         return 0
-    print(render_insight(it, rows, per_year=a.per_year, recent=a.recent))
+    print(render_insight(it, rows, per_year=a.per_year, recent=a.recent, translate=a.translate))
     return 0
 
 
@@ -871,6 +879,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--per-period", type=int, default=8, help="每个时段展示几条")
     s.add_argument(
+        "--translate", choices=["auto", "mymemory", "codex", "none"], default="auto",
+        help="海外条目标题的中文翻译（默认 auto=mymemory；--translate none 关闭）",
+    )
+    s.add_argument(
         "--insights", action="store_true",
         help="附带专题洞察与展望（脉络 / 现状 / 各主体可能的动作）",
     )
@@ -960,6 +972,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--days", type=int, default=None)
     s.add_argument("--min-score", type=float, default=0.0)
     s.add_argument("--html", action="store_true", help="导出成网页（含关联名词档案）")
+    s.add_argument(
+        "--translate", choices=["auto", "mymemory", "codex", "none"], default="auto",
+        help="外部视角的英文标题翻成中文（默认 auto，缓存后不再重复请求）",
+    )
     s.add_argument("--out", default=None, help="输出路径")
     s.set_defaults(func=cmd_feature)
 
@@ -971,6 +987,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--per-year", type=int, default=3, help="自动脉络里每年展示几条")
     s.add_argument("--recent", type=int, default=5, help="展示几条最新动态")
     s.add_argument("--no-news", action="store_true", help="只看人工整理的部分，不关联库内文件")
+    s.add_argument(
+        "--translate", choices=["auto", "mymemory", "codex", "none"], default="none",
+        help="把「外部视角」里的英文标题翻成中文",
+    )
     s.add_argument("--html", action="store_true", help="导出这一条专题的网页（含关联名词档案）")
     s.add_argument("--out", default=None, help="网页输出路径，默认 output/insights/<id>.html")
     s.set_defaults(func=cmd_insight)

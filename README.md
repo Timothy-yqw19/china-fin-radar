@@ -119,7 +119,7 @@ finradar facts --keys lpr money_supply cpi
 | 大众热榜 | 今日头条 / 抖音 / 百度 | JSON | 看大众在关心什么；默认不参与政策统计（`--include-trends` 打开） |
 | 权威媒体 | 新华社（财经/金融）、中国证券报、上海证券报、证券日报、证券时报 | HTML + 配置化 | 报告里的「媒体视角」 |
 | 政府新闻出口 | 中国政府网·要闻（静态 JSON，400 条） | JSON | 政府直接的新闻出口 |
-| 外部视角 | Google News（聚合路透/彭博/南华早报…）、美联储、世界银行、Rhodium Group | RSS / JSON API | 报告与专题里的「外部视角」，英文标题用中英词表匹配 |
+| 外部视角 | Google News（聚合路透/彭博/南华早报…）、美联储、世界银行、Rhodium Group | RSS / JSON API | 报告与专题里的「外部视角」；英文标题用中英词表匹配，并**自动附中文译文** |
 | 快讯 | 财联社电报 | JSON（含 A/B 重点标记，自动提分） | |
 | 快讯 | 同花顺 / 新浪 7×24 | JSON | |
 | 兜底 + 宏观 | AkShare | Python 包 | 直连失败时的第二条腿；LPR/M2/CPI/社融等宏观数据的来源 |
@@ -240,6 +240,7 @@ finradar/
 ├── models.py            NewsItem / Term / Question
 ├── storage.py           SQLite：新闻去重、刷题记录、运行日志
 ├── state.py             运行状态（上次跑到什么时候 → 支持一条命令增量更新）
+├── translate.py         海外条目的中文翻译（mymemory / codex 两个后端 + 缓存与额度保护）
 ├── utils.py             HTTP（重试/随机UA/限速）、时间解析
 ├── crawlers/
 │   ├── official.py      政府网 / 证监会 / 金融监管总局 / 央行 / 外汇局
@@ -281,7 +282,7 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   191 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   196 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -290,7 +291,7 @@ tests/                   191 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 191 passed
+pytest -q            # 196 passed
 ruff check .
 ```
 
