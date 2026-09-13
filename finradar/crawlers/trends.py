@@ -27,12 +27,17 @@ class _HotBoard(BaseCrawler):
 
     def make(self, title: str, hot: int | str | None, url: str = "") -> NewsItem:
         hot_txt = f"热度 {hot}" if hot not in (None, "") else ""
+        # 热榜是实时榜: 每天留一份快照(去重键带日期), 才能统计"连续上榜天数"。
+        # 同一天重复抓仍然去重, 不会膨胀。
+        from ..utils import now_cn
+
         return self.item(
             title=title,
             url=url,
             published_at=parse_time(None),
             summary=hot_txt,
             channel=self.board,
+            dedupe_key=f"{self.source_id}:{now_cn().date().isoformat()}:{title}",
         )
 
 

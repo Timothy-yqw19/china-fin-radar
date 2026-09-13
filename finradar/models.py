@@ -35,6 +35,10 @@ class NewsItem:
     hotwords: list[str] = field(default_factory=list)
     policy_score: float = 0.0  # 政策相关度 0-100
     impact: str = ""  # 影响链解读
+    # 去重键: 默认按 url(没有 url 就按 源+标题)去重。
+    # 热榜这类"每天都要留一份快照"的源会显式指定它(带上日期), 这样
+    # 同一个话题连续上榜几天就能统计出"连续上榜天数"。
+    dedupe_key: str = ""
     fetched_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
     def __post_init__(self) -> None:
@@ -45,7 +49,7 @@ class NewsItem:
     @property
     def uid(self) -> str:
         """去重主键: 优先 url, 否则 源+标题."""
-        base = self.url.strip() or f"{self.source}:{self.title}"
+        base = self.dedupe_key.strip() or self.url.strip() or f"{self.source}:{self.title}"
         return hashlib.md5(base.encode("utf-8")).hexdigest()
 
     @property

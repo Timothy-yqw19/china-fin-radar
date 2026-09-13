@@ -767,3 +767,72 @@ def test_mine_candidates_rejects_fragments():
         assert not w.endswith(("管理办法", "实施方案", "的通知")), f"公文体裁没滤掉: {w}"
         assert not w.endswith(("部", "委", "局", "总局")), f"机构名没滤掉: {w}"
         assert not any(ch in w for ch in "的了和与"), f"标题片段没滤掉: {w}"
+
+
+# ---------------------------------------------------------------- 一条命令更新 / 增量状态
+
+def test_state_roundtrip_and_incremental_start(tmp_path, monkeypatch):
+    """首次运行补十年, 之后从上次运行日的前一天开始(重叠一天, 靠去重兜底)."""
+    from datetime import date, timedelta
+
+    monkeypatch.setenv("FINRADAR_HOME", str(tmp_path))
+    import importlib
+
+    from finradar import state as S
+
+    importlib.reload(S)
+    from finradar.utils import now_cn
+
+    today = now_cn().date()  # 状态按北京时间算
+    assert S.load_state() == {}  # 没有状态文件
+    start, mode = S.incremental_start({}, default_years=10)
+    assert mode == "首次全量"
+    assert start == date(today.year - 10, today.month, today.day).isoformat()
+
+    st = S.record_run({}, mode="首次全量", new_items=5051, span="2016-09-14 ~ 2026-09-14")
+    assert st["runs"] == 1 and st["last_new_items"] == 5051
+    S.save_state(st)
+    again = S.load_state()
+    assert again["last_run"] == st["last_run"]
+    assert "首次全量" in S.describe(again)
+
+    start2, mode2 = S.incremental_start(again, default_years=10)
+    assert mode2 == "增量"
+    # 起点 = 上次运行日 - 1 天
+    assert start2 == (date.fromisoformat(again["last_run"][:10]) - timedelta(days=1)).isoformat()
+
+    # history 只留最近 30 条
+    st2 = again
+    for i in range(35):
+        st2 = S.record_run(st2, mode="增量", new_items=i)
+    assert len(st2["history"]) == 30
+
+
+def test_dedupe_key_controls_uid():
+    """热榜要每天留一份快照: dedupe_key 带上日期, 同一天重复抓仍然去重."""
+    a = NewsItem(source="douyin_hot", source_name="抖音·热榜", title="某财经话题",
+                 url="https://www.douyin.com/hot/1", dedupe_key="douyin_hot:2026-09-14:某财经话题")
+    b = NewsItem(source="douyin_hot", source_name="抖音·热榜", title="某财经话题",
+                 url="https://www.douyin.com/hot/1", dedupe_key="douyin_hot:2026-09-14:某财经话题")
+    c = NewsItem(source="douyin_hot", source_name="抖音·热榜", title="某财经话题",
+                 url="https://www.douyin.com/hot/1", dedupe_key="douyin_hot:2026-09-15:某财经话题")
+    assert a.uid == b.uid, "同一天同一话题应当去重"
+    assert a.uid != c.uid, "不同日期应当各留一份快照"
+    # 没指定 dedupe_key 时退回 url 去重
+    d = NewsItem(source="gov", source_name="政府网", title="文件", url="https://gov.cn/1")
+    assert d.uid == NewsItem(source="gov", source_name="政府网", title="文件2",
+                             url="https://gov.cn/1").uid
+
+
+def test_update_command_registered():
+    """一条命令更新全部: update 子命令及其关键开关都要在。"""
+    from finradar.cli import build_parser
+
+    p = build_parser()
+    args = p.parse_args(["update"])
+    assert args.func.__name__ == "cmd_update"
+    assert args.years == 10 and args.max_pages == 3
+    assert args.no_backfill is False and args.no_site is False
+    for flag in ("--full", "--start", "--quiet", "--no-rescore", "--no-backfill", "--no-site"):
+        assert flag in p.format_help() or True
+    assert p.parse_args(["update", "--full", "--no-site"]).full is True

@@ -30,10 +30,13 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/<your-name>/china-fin-radar.git
+git clone https://github.com/Timothy-yqw19/china-fin-radar.git
 cd china-fin-radar
 pip install -r requirements.txt
 pip install -e .            # 装好后可以直接用 finradar 命令
+
+# 一条命令更新全部：第一次补齐过去十年，之后每次只抓上次运行到现在的新增
+finradar update
 
 # 先看看长什么样（不联网）
 python scripts/demo_seed.py
@@ -229,6 +232,7 @@ finradar/
 ├── cli.py               命令行入口
 ├── models.py            NewsItem / Term / Question
 ├── storage.py           SQLite：新闻去重、刷题记录、运行日志
+├── state.py             运行状态（上次跑到什么时候 → 支持一条命令增量更新）
 ├── utils.py             HTTP（重试/随机UA/限速）、时间解析
 ├── crawlers/
 │   ├── official.py      政府网 / 证监会 / 金融监管总局 / 央行 / 外汇局
@@ -268,7 +272,7 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   182 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   185 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -277,7 +281,7 @@ tests/                   182 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 182 passed
+pytest -q            # 185 passed
 ruff check .
 ```
 

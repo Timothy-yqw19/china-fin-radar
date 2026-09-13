@@ -36,6 +36,65 @@ from .utils import Fetcher, setup_logging, workdir
 
 # ---------------------------------------------------------------- 抓取
 
+def _run_crawl(
+    store: Store,
+    fetcher: Fetcher,
+    sources: list[str],
+    pages: int = 1,
+    min_score: float = 0.0,
+    quiet: bool = False,
+) -> tuple[list, int]:
+    """抓取并入库, 返回 (条目, 新增条数). crawl / update 共用."""
+    from .crawlers import source_base_score
+
+    items = []
+    for c in build_all(sources, pages=pages, fetcher=fetcher):
+        got = c.run()
+        store.log_run(c.source_id, bool(got), len(got))
+        if not quiet:
+            print(f"  {c.source_name:<22}{len(got):>5} 条")
+        items.extend(got)
+    items = annotate(items)
+    for it in items:  # 来源先验分作为下限
+        it.policy_score = max(it.policy_score, source_base_score(it.source))
+    if min_score:
+        items = [i for i in items if i.policy_score >= min_score]
+    return items, store.save_news(items)
+
+
+def _run_backfill(
+    store: Store,
+    fetcher: Fetcher,
+    start: str,
+    end: str,
+    step: str = "year",
+    max_pages: int = 3,
+    queries: list[str] | None = None,
+    search: str | None = None,
+    page_size: int = 50,
+    quiet: bool = False,
+) -> tuple[list, int]:
+    """按日期范围回捞政策文件库, 返回 (条目, 新增条数). backfill / update 共用."""
+    from .analysis.periods import iter_periods
+    from .crawlers import source_base_score
+    from .crawlers.official import GovPolicyCrawler
+
+    crawler = GovPolicyCrawler(fetcher=fetcher, pages=1)
+    items: list = []
+    for label, s, e in iter_periods(start, end, step):
+        got = crawler.fetch_range(
+            s, e, queries=queries, max_pages=max_pages,
+            searchfield=search, page_size=page_size,
+        )
+        if not quiet:
+            print(f"  {label}: {len(got)} 条")
+        items.extend(got)
+    items = annotate(items)
+    for it in items:
+        it.policy_score = max(it.policy_score, source_base_score(it.source))
+    return items, store.save_news(items)
+
+
 def cmd_crawl(a: argparse.Namespace) -> int:
     store = Store(a.db)
     fetcher = Fetcher(timeout=a.timeout, retries=a.retries, verify=not a.insecure)
@@ -93,6 +152,91 @@ def cmd_doctor(a: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- 报告
+
+def cmd_update(a: argparse.Namespace) -> int:
+    """一条命令更新所有平台: 首次补齐十年, 之后只抓"上次运行到现在"的新增.
+
+    做的事(按顺序):
+      1. 政策文件库回捞 —— 首次从十年前开始, 之后从上次运行日前一天开始
+      2. 抓全部实时源 —— 官方站 / 快讯 / 证券时报 / 大众热榜 / AkShare
+      3. 重算打分(改过规则的条目会被修正)
+      4. 重建网页(专题洞察网页 + 词库刷题网页)
+      5. 记录本次运行时间与新增条数到 output/state.json
+    """
+    from datetime import date
+    from .crawlers import config_source_ids
+    from .state import describe, incremental_start, load_state, record_run, save_state
+    from .utils import now_cn
+
+    state = load_state()
+    store = Store(a.db)
+    fetcher = Fetcher(timeout=a.timeout, retries=a.retries, verify=not a.insecure)
+    today = now_cn().date()
+
+    start, mode = incremental_start(state, default_years=a.years)
+    if a.full:
+        mode = "全量"
+        start = a.start or date(today.year - a.years, today.month, today.day).isoformat()
+    elif a.start:
+        mode = "指定起点"
+        start = a.start
+
+    print(f"上次状态：{describe(state)}")
+    gap_days = (today - date.fromisoformat(start)).days
+    step = "year" if gap_days > 400 else ("quarter" if gap_days > 120 else "month")
+    print(f"本次模式：{mode}，回捞区间 {start} ~ {today.isoformat()}（按{step}分段）\n")
+
+    added_total = 0
+    # 1) 政策库回捞(十年/增量)
+    if not a.no_backfill:
+        print("① 政策文件库回捞")
+        _, new = _run_backfill(
+            store, fetcher, start, today.isoformat(), step=step,
+            max_pages=a.max_pages, search=a.search, quiet=a.quiet,
+        )
+        added_total += new
+        print(f"   → 新增 {new} 条\n")
+    else:
+        print("① 跳过政策库回捞（--no-backfill）\n")
+
+    # 2) 全源抓取
+    sources = a.source or ["official", "flash", "trends", "akshare", *config_source_ids()]
+    print(f"② 抓取实时源（{len(build_all(sources, pages=1, fetcher=fetcher))} 个）")
+    _, new = _run_crawl(
+        store, fetcher, sources, pages=a.pages, min_score=a.min_score, quiet=a.quiet
+    )
+    added_total += new
+    print(f"   → 新增 {new} 条\n")
+
+    # 3) 重算打分
+    if not a.no_rescore:
+        print("③ 重算打分")
+        cmd_rescore(a)
+        print()
+
+    # 4) 重建网页
+    if not a.no_site:
+        print("④ 重建网页")
+        from .analysis.insight_site import build_payload, render_site
+
+        rows = store.query(limit=10**6)
+        out = workdir() / "insights.html"
+        out.write_text(render_site(build_payload(rows)), encoding="utf-8")
+        print(f"   → {out}（{len(rows):,} 条语料）")
+
+    # 5) 记录状态
+    span = f"{start} ~ {today.isoformat()}"
+    state = record_run(state, mode=mode, new_items=added_total, span=span)
+    p = save_state(state)
+    st = store.stats()
+    print(
+        f"\n⑤ 完成：本次新增 {added_total} 条，库内累计 {st['total']:,} 条，"
+        f"数据覆盖 {st['earliest']} ~ {st['latest']}\n状态已记录到 {p}"
+    )
+    if added_total:
+        print("\n下一步建议：finradar report --days 3 --min-score 55  （看这两天的政策）")
+    return 0
+
 
 def cmd_backfill(a: argparse.Namespace) -> int:
     """回捞历史数据.
@@ -676,6 +820,21 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--retries", type=int, default=3)
         sp.add_argument("--insecure", action="store_true", help="跳过 TLS 校验(部分政务站)")
         return sp
+
+    s = net(sub.add_parser("update", help="一条命令更新全部（首次补齐十年，之后增量）"))
+    s.add_argument("--years", type=int, default=10, help="首次运行时往回补多少年")
+    s.add_argument("--start", default=None, help="手动指定回捞起点 YYYY-MM-DD")
+    s.add_argument("--full", action="store_true", help="强制全量（忽略上次运行时间）")
+    s.add_argument("--pages", type=int, default=1, help="实时源翻页数")
+    s.add_argument("--max-pages", type=int, default=3, help="政策库每个时段最多翻几页")
+    s.add_argument("--search", choices=["title", "fulltext"], default="fulltext")
+    s.add_argument("--min-score", type=float, default=0.0)
+    s.add_argument("--source", nargs="*", default=None, help="默认全部实时源")
+    s.add_argument("--no-backfill", action="store_true", help="跳过政策库历史回捞")
+    s.add_argument("--no-rescore", action="store_true", help="跳过重算打分")
+    s.add_argument("--no-site", action="store_true", help="跳过重建网页")
+    s.add_argument("--quiet", action="store_true", help="不逐源打印")
+    s.set_defaults(func=cmd_update)
 
     s = net(sub.add_parser("crawl", help="抓取新闻/政策"))
     s.add_argument(
