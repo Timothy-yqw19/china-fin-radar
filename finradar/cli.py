@@ -232,6 +232,29 @@ def cmd_update(a: argparse.Namespace) -> int:
         print(f"   → {out}（{len(rows):,} 条语料）")
 
     # 5) 记录状态
+    # 4.5) 归档通报(可选): --publish 时生成公文版报告并放进 docs/reports/
+    if a.publish:
+        print("④.5 归档政策通报")
+        res = _build_and_archive(
+            store, window=a.publish_window, min_score=a.publish_min_score,
+            keep=a.keep, style=a.style, translate=a.translate,
+        )
+        if res.get("empty"):
+            print("   → 区间内没有符合条件的条目，跳过归档\n")
+        else:
+            print(f"   → {res['paths']['html']}")
+            print(f"   → 已归档到 {res['dest']}（共 {res['kept']} 期），索引：{res['index']}")
+            if a.push:
+                if _git_publish(res["dest"], res["label"]) != 0:
+                    return 1
+            else:
+                print(
+                    "   → 要发布到网站： "
+                    f"git add {res['dest']} && git commit -m 'docs: 归档{res['label']}政策通报' && git push"
+                    "（或加 --push）"
+                )
+            print()
+
     span = f"{start} ~ {today.isoformat()}"
     state = record_run(state, mode=mode, new_items=added_total, span=span)
     p = save_state(state)
@@ -308,63 +331,100 @@ def cmd_backfill(a: argparse.Namespace) -> int:
     return 0
 
 
+def _build_and_archive(
+    store: Store,
+    *,
+    window: str | None = "7d",
+    days: int | None = None,
+    min_score: float = 55.0,
+    per_period: int = 8,
+    title: str | None = None,
+    stem: str | None = None,
+    dest_dir: str | None = None,
+    keep: int = 30,
+    style: str = "formal",
+    translate: str = "auto",
+) -> dict:
+    """生成一期报告并归档到目录 + 刷新索引页. publish / update 共用."""
+    import shutil
+
+    from .analysis.report import write_report, write_report_index
+
+    since, label, span = resolve_window(window, days)
+    rows = store.query(since=since, min_score=min_score, limit=10**6)
+    if not rows:
+        return {"empty": True}
+    doc_title = title or ("金融政策回顾" if (span is None or span >= 180) else "金融政策动态通报")
+    group_by = "time" if (span is None or span >= 180) else "issue"
+    bucket = auto_bucket(span)
+
+    paths = write_report(
+        rows, title=doc_title, stem=stem, group_by=group_by, bucket=bucket,
+        top_per_period=per_period,
+        view_rows=store.query(since=since, min_score=0.0, limit=10**6),
+        translate=translate, style=style,
+    )
+    dest = Path(dest_dir or "docs/reports")
+    dest.mkdir(parents=True, exist_ok=True)
+    for p in paths.values():
+        shutil.copy2(p, dest / Path(p).name)
+    # 只保留最近 N 期, 免得仓库越滚越大
+    files = sorted(dest.glob("report_*"), reverse=True)
+    for f in files[keep * 2 :]:
+        f.unlink()
+    idx = write_report_index(dest, limit=keep)
+    return {
+        "empty": False,
+        "paths": paths,
+        "index": str(idx),
+        "dest": str(dest),
+        "kept": len(list(dest.glob("report_*.html"))),
+        "label": label,
+    }
+
+
+def _git_publish(dest: str, label: str) -> int:
+    """把归档目录提交并推送（只有显式 --push 时才会走到这里）."""
+    import subprocess
+
+    try:
+        subprocess.run(["git", "add", dest], check=True, cwd=Path.cwd())
+        subprocess.run(
+            ["git", "commit", "-m", f"docs: 归档{label}政策通报"], check=True, cwd=Path.cwd()
+        )
+        subprocess.run(["git", "push"], check=True, cwd=Path.cwd())
+        print("已提交并推送，网站会在 1 分钟内更新。")
+    except subprocess.CalledProcessError as e:
+        print(f"git 操作失败（{e}）：请手动提交 {dest}")
+        return 1
+    return 0
+
+
 def cmd_publish(a: argparse.Namespace) -> int:
     """生成一期报告并归档到 docs/reports/, 让网站(GitHub Pages)上能按日期浏览.
 
     流程: 生成报告 → 复制到 docs/reports/ → 生成索引页 → （可选）git 提交推送。
     默认只写文件并打印命令; 加 --push 才会真的提交推送。
     """
-    import shutil
-    import subprocess
-
-    store = Store(a.db)
-    since, label, span = resolve_window(a.window, a.days)
-    rows = store.query(since=since, min_score=a.min_score, limit=10**6)
-    if not rows:
+    res = _build_and_archive(
+        Store(a.db), window=a.window, days=a.days, min_score=a.min_score,
+        per_period=a.per_period, title=a.title, stem=a.stem, dest_dir=a.dir,
+        keep=a.keep, style=a.style, translate=a.translate,
+    )
+    if res.get("empty"):
         print("库里没有符合条件的数据，先跑 `finradar update`。")
         return 1
-    title = a.title or ("金融政策回顾" if (span is None or span >= 180) else "金融政策动态通报")
-    group_by = "time" if (span is None or span >= 180) else "issue"
-    bucket = auto_bucket(span)
-
-    from .analysis.report import write_report, write_report_index
-
-    paths = write_report(
-        rows, title=title, stem=a.stem, group_by=group_by, bucket=bucket,
-        top_per_period=a.per_period, view_rows=store.query(since=since, min_score=0.0, limit=10**6),
-        translate=a.translate, style=a.style,
-    )
-    dest = Path(a.dir or "docs/reports")
-    dest.mkdir(parents=True, exist_ok=True)
-    for p in paths.values():
-        shutil.copy2(p, dest / Path(p).name)
-    # 只保留最近 N 期, 免得仓库越滚越大
-    files = sorted(dest.glob("report_*"), reverse=True)
-    for f in files[a.keep * 2 :]:
-        f.unlink()
-    idx = write_report_index(dest, limit=a.keep)
-    kept = len(list(dest.glob("report_*.html")))
-    print(f"已生成报告：{paths['markdown']}\n           {paths['html']}")
-    print(f"已归档到 {dest}（共 {kept} 期）\n索引页：{idx}")
+    print(f"已生成报告：{res['paths']['markdown']}\n           {res['paths']['html']}")
+    print(f"已归档到 {res['dest']}（共 {res['kept']} 期）\n索引页：{res['index']}")
 
     if not a.push:
         print(
             "\n要发布到网站，执行：\n"
-            f"  git add {dest} && git commit -m 'docs: 归档 {label} 政策通报' && git push"
+            f"  git add {res['dest']} && git commit -m 'docs: 归档 {res['label']} 政策通报' && git push"
             "\n（或下次加 --push 让本命令直接完成）"
         )
         return 0
-    try:
-        subprocess.run(["git", "add", str(dest)], check=True, cwd=Path.cwd())
-        subprocess.run(
-            ["git", "commit", "-m", f"docs: 归档{label}政策通报"], check=True, cwd=Path.cwd()
-        )
-        subprocess.run(["git", "push"], check=True, cwd=Path.cwd())
-        print("\n已提交并推送，网站会在 1 分钟内更新。")
-    except subprocess.CalledProcessError as e:
-        print(f"\ngit 操作失败（{e}）：请手动提交 {dest}")
-        return 1
-    return 0
+    return _git_publish(res["dest"], res["label"])
 
 
 def cmd_rescore(a: argparse.Namespace) -> int:
@@ -910,6 +970,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-backfill", action="store_true", help="跳过政策库历史回捞")
     s.add_argument("--no-rescore", action="store_true", help="跳过重算打分")
     s.add_argument("--no-site", action="store_true", help="跳过重建网页")
+    s.add_argument(
+        "--publish", action="store_true",
+        help="同时生成并归档一期公文版通报到 docs/reports/（网站可浏览）",
+    )
+    s.add_argument("--publish-window", default="7d", help="归档通报的区间，默认近 7 天")
+    s.add_argument("--publish-min-score", type=float, default=55.0)
+    s.add_argument("--keep", type=int, default=30, help="网站最多保留多少期通报")
+    s.add_argument("--style", choices=["formal", "plain"], default="formal")
+    s.add_argument(
+        "--translate", choices=["auto", "mymemory", "codex", "none"], default="auto",
+        help="归档通报里海外条目的中文翻译",
+    )
+    s.add_argument("--push", action="store_true", help="配合 --publish：自动提交并推送到 GitHub")
     s.add_argument("--quiet", action="store_true", help="不逐源打印")
     s.set_defaults(func=cmd_update)
 

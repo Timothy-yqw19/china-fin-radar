@@ -61,6 +61,9 @@ pip install -e .            # 装好后可以直接用 finradar 命令
 # 一条命令更新全部：第一次补齐过去十年，之后每次只抓上次运行到现在的新增
 finradar update
 
+# 更新 + 生成公文版通报 + 归档到网站 + 推送到 GitHub（日常就这一条）
+finradar update --publish --push
+
 # 先看看长什么样（不联网）
 python scripts/demo_seed.py
 

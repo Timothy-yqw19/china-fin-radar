@@ -1138,3 +1138,17 @@ def test_publish_command_registered():
     a = p.parse_args(["publish"])
     assert a.func.__name__ == "cmd_publish"
     assert a.style == "formal" and a.keep == 30 and a.push is False
+
+
+def test_update_publish_flags():
+    """update 现在带 --publish/--push: 日常一条命令就能更新+归档+推送."""
+    from finradar.cli import build_parser
+
+    p = build_parser()
+    a = p.parse_args(["update", "--publish", "--push"])
+    assert a.publish is True and a.push is True
+    assert a.publish_window == "7d" and a.publish_min_score == 55.0
+    assert a.style == "formal" and a.keep == 30
+    # 不带 --publish 时保持原行为(只更新数据)
+    b = p.parse_args(["update"])
+    assert b.publish is False and b.push is False
