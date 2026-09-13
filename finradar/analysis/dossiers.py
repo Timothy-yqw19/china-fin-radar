@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..models import Insight, Term
 
@@ -34,9 +34,9 @@ STOP_WORDS = {
     "中共中央", "国务院办公厅", "国务院新闻办", "办公厅",
     # 公文类型不是"提法", 但会命中 办法/方案/指引 这些中心词
     "管理办法", "暂行办法", "实施方案", "行动方案", "工作方案", "指导意见",
-    "实施细则", "实施细则", "规定", "方案", "办法", "指引", "通知", "公告",
+    "实施细则", "规定", "方案", "办法", "指引", "通知", "公告",
     "实施意见", "试点方案", "发展规划", "工作计划", "政策措施", "政策工具",
-    "政策措施", "政策措施", "若干措施", "政策措施",
+    "若干措施",
     # 太泛的通用语, 做成词条没有信息量
     "金融服务", "金融政策", "金融产品", "金融业", "金融等", "支持政策", "政策支持",
     "优惠政策", "政策性", "银行业", "保险业", "银行保险", "资产管理", "资本市场",
@@ -213,9 +213,7 @@ def mine_candidates(
         # 已经是已知词汇的一部分(如"保基金"⊂"社保基金"), 说明是碎片或没新意
         if any(w != s and w in s for s in skip):
             return False
-        if require_domain and not any(tok in w for tok in FINANCE_TOKENS):
-            return False
-        return True
+        return not (require_domain and not any(tok in w for tok in FINANCE_TOKENS))
 
     # ---------- 1) 后缀定向抽取(只看标题) ----------
     # 只挖标题: 政策提法几乎都会写进标题, 而且标题没有跨句碎片

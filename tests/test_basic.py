@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from finradar.analysis.tagger import score_and_tag
 from finradar.analysis.report import build_html, build_markdown
+from finradar.analysis.tagger import score_and_tag
 from finradar.knowledge import glossary as G
 from finradar.knowledge import qbank as Q
 from finradar.models import NewsItem
 from finradar.storage import Store
 from finradar.utils import parse_time
-
 
 # ---------------------------------------------------------------- 数据完整性
 
@@ -406,8 +405,9 @@ def test_keyword_substring_not_double_counted():
 
 
 def test_synonym_terms_merged_in_hotwords():
-    from finradar.analysis.hotwords import _merge_substring_terms
     from collections import Counter
+
+    from finradar.analysis.hotwords import _merge_substring_terms
 
     cnt = Counter({
         '金融"五篇大文章"': 65,   # 词库口径的主词
@@ -618,7 +618,11 @@ def test_all_insights_have_feature_article():
 
 
 def test_feature_render_markdown_and_html():
-    from finradar.analysis.features import build_feature, render_feature_html, render_feature_markdown
+    from finradar.analysis.features import (
+        build_feature,
+        render_feature_html,
+        render_feature_markdown,
+    )
     from finradar.knowledge import insights as I
 
     it = I.get("QDII")

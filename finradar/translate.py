@@ -48,7 +48,7 @@ def save_cache(cache: dict) -> None:
 
 
 def _key(text: str, backend: str) -> str:
-    return hashlib.md5(f"{backend}:{text}".encode("utf-8")).hexdigest()
+    return hashlib.md5(f"{backend}:{text}".encode()).hexdigest()
 
 
 def _used_today(cache: dict) -> int:

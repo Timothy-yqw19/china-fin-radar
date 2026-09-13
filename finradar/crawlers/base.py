@@ -5,21 +5,21 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from ..models import NewsItem
-from ..utils import Fetcher, LOG
+from ..utils import LOG, Fetcher
 
-_REGISTRY: dict[str, type["BaseCrawler"]] = {}
+_REGISTRY: dict[str, type[BaseCrawler]] = {}
 
 
-def register(cls: type["BaseCrawler"]) -> type["BaseCrawler"]:
+def register(cls: type[BaseCrawler]) -> type[BaseCrawler]:
     _REGISTRY[cls.source_id] = cls
     return cls
 
 
-def registry() -> dict[str, type["BaseCrawler"]]:
+def registry() -> dict[str, type[BaseCrawler]]:
     return dict(_REGISTRY)
 
 
-def get_crawler(source_id: str) -> type["BaseCrawler"] | None:
+def get_crawler(source_id: str) -> type[BaseCrawler] | None:
     return _REGISTRY.get(source_id)
 
 

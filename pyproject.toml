@@ -32,6 +32,17 @@ finradar = ["data/**/*.yaml"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# 显式声明规则集: ruff 新版本会扩大默认规则集, 不写死的话 CI 会因为
+# 换了个 ruff 版本突然报一堆错(本项目就踩过: 本地 0.12 通过, CI 0.16 报 93 条)
+[tool.ruff.lint]
+# 说明: 不启用 RUF001-RUF003 —— 那三条是"字符串里有歧义 unicode 字符",
+# 对中文项目只会把全角标点全部报成错误。
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "SIM"]
+# UP038 已被新版 ruff 删除(isinstance 用 X | Y), 忽略掉让新旧版本一致
+ignore = ["SIM108", "B905", "UP038"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

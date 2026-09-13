@@ -318,7 +318,7 @@ def test_config_crawler_filters_and_paginates():
     titles = [i.title for i in items]
     assert "关于印发科创板改革实施方案的通知" in titles, "标题里粘的日期没被剥掉"
     assert "关于修订管理办法的公告" in titles, "翻页 URL 没生成对"
-    assert all("关于我们" != t and "下级栏目" != t for t in titles), "导航项被 require_date 过滤掉了?"
+    assert all(t != "关于我们" and t != "下级栏目" for t in titles), "导航项被 require_date 过滤掉了?"
     assert all(len(i.date) == 10 for i in items), "href 里的日期没解析出来"
 
 

@@ -7,8 +7,8 @@ import functools
 import yaml
 
 from ..utils import CONFIG_DIR, LOG
+from . import ak_source, feeds, flash, official, trends  # noqa: F401,E402
 from .base import BaseCrawler, get_crawler, register, registry  # noqa: F401
-from . import official, flash, ak_source, trends, feeds  # noqa: F401,E402
 from .official import ConfigListCrawler  # noqa: E402
 
 __all__ = [

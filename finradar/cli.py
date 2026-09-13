@@ -22,8 +22,14 @@ from pathlib import Path
 
 from . import __version__
 from .analysis import (
-    annotate, auto_bucket, combined_hotwords, dedupe_rows, discover_new_words,
-    render_trend, resolve_window, write_report,
+    annotate,
+    auto_bucket,
+    combined_hotwords,
+    dedupe_rows,
+    discover_new_words,
+    render_trend,
+    resolve_window,
+    write_report,
 )
 from .crawlers import TRENDS, build_all, config_source_ids, registry
 from .knowledge import glossary as G
@@ -32,7 +38,6 @@ from .knowledge import quiz as QZ
 from .models import NewsItem
 from .storage import Store
 from .utils import Fetcher, setup_logging, workdir
-
 
 # ---------------------------------------------------------------- 抓取
 
