@@ -164,7 +164,7 @@ def cmd_update(a: argparse.Namespace) -> int:
       5. 记录本次运行时间与新增条数到 output/state.json
     """
     from datetime import date
-    from .crawlers import config_source_ids
+
     from .state import describe, incremental_start, load_state, record_run, save_state
     from .utils import now_cn
 
@@ -200,7 +200,9 @@ def cmd_update(a: argparse.Namespace) -> int:
         print("① 跳过政策库回捞（--no-backfill）\n")
 
     # 2) 全源抓取
-    sources = a.source or ["official", "flash", "trends", "akshare", *config_source_ids()]
+    sources = a.source or [
+        "official", "flash", "trends", "external", "media", "akshare",
+    ]
     print(f"② 抓取实时源（{len(build_all(sources, pages=1, fetcher=fetcher))} 个）")
     _, new = _run_crawl(
         store, fetcher, sources, pages=a.pages, min_score=a.min_score, quiet=a.quiet
@@ -378,6 +380,8 @@ def cmd_report(a: argparse.Namespace) -> int:
     paths = write_report(
         rows, title=title, group_by=group_by, bucket=bucket,
         top_per_period=a.per_period, insights=insights,
+        # 媒体与外部视角单独取一遍(不套 min-score): 它们是给正文做补充说明的
+        view_rows=store.query(since=since, min_score=0.0, limit=10**6),
     )
     print(f"Markdown: {paths['markdown']}\nHTML:     {paths['html']}")
     return 0

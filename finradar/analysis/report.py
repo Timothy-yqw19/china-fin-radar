@@ -162,6 +162,7 @@ def build_markdown(
     bucket: str = "month",
     top_per_period: int = 8,
     insights: list | None = None,
+    view_rows: list[dict] | None = None,
 ) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
@@ -187,6 +188,35 @@ def build_markdown(
         ]
         for i, (w, n) in enumerate(hot.most_common(top_hot), 1):
             lines.append(f"| {i} | {w} | {n} |")
+        lines.append("")
+
+    # 权威媒体 + 外部视角: 让报告不止有"官方原文", 还有媒体怎么说、海外怎么读
+    from .views import pick_views, render_views_markdown
+
+    # 媒体与外部视角单独取数: 它们的政策分天然很低, 不能跟正文用同一个阈值
+    vr = view_rows if view_rows is not None else rows
+    hot_words = [w for w, _ in hot.most_common(24)] if hot else []
+    lines += render_views_markdown(
+        pick_views(vr, "media", hot_words, top=8), "媒体视角（权威媒体怎么报道）"
+    )
+    from .views import expand_keywords
+
+    # 海外报道是英文的: 先把中文热词映射成英文说法再匹配
+    external = pick_views(vr, "external", expand_keywords(hot_words), top=8)
+    note = ""
+    if not external:
+        # 本期热词没被海外条目命中时, 退而给出最近的海外动态, 并说明它们没对上
+        external = pick_views(vr, "external", None, top=5)
+        if external:
+            note = "（以下为近期海外动态，未与本期热词直接对应）"
+    if external:
+        lines += [f"## 外部视角（海外机构与媒体怎么读）{note}", ""]
+        for r in external:
+            date = (r.get("pub_date") or "")[:10]
+            src = r.get("source_name") or r.get("source") or ""
+            url = r.get("url") or ""
+            t = r.get("title") or ""
+            lines.append(f"- {date}　[{t}]({url})　`{src}`" if url else f"- {date}　{t}　`{src}`")
         lines.append("")
 
     if insights:
@@ -315,6 +345,7 @@ def build_html(
     bucket: str = "month",
     top_per_period: int = 8,
     insights: list | None = None,
+    view_rows: list[dict] | None = None,
 ) -> str:
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
@@ -327,6 +358,34 @@ def build_html(
             for w, n in hot.most_common(20)
         )
         parts.append(f"<h2>热词榜</h2><div class='chips'>{chips}</div>")
+
+    # 媒体与外部视角（和 Markdown 版一致）
+    from .views import expand_keywords, pick_views
+
+    vr = view_rows if view_rows is not None else rows
+    hot_words = [w for w, _ in hot.most_common(24)] if hot else []
+    for kind, label in (("media", "媒体视角（权威媒体怎么报道）"),
+                        ("external", "外部视角（海外机构与媒体怎么读）")):
+        kw = hot_words if kind == "media" else expand_keywords(hot_words)
+        items = pick_views(vr, kind, kw, top=8)
+        if not items and kind == "external":
+            items = pick_views(vr, kind, None, top=5)
+        if not items:
+            continue
+        lis = "".join(
+            "<li>"
+            + (
+                f'<a href="{html.escape(r.get("url") or "")}" target="_blank" rel="noopener">'
+                f'{html.escape(r.get("title") or "")}</a>'
+                if r.get("url")
+                else html.escape(r.get("title") or "")
+            )
+            + f'<div class="m">{(r.get("pub_date") or "")[:10]} · '
+            + html.escape(r.get("source_name") or r.get("source") or "")
+            + "</div></li>"
+            for r in items
+        )
+        parts.append(f"<h2>{label}</h2><ul class='docs'>{lis}</ul>")
 
     if insights:
         from .insights import render_brief
@@ -417,6 +476,7 @@ def write_report(
     bucket: str = "month",
     top_per_period: int = 8,
     insights: list | None = None,
+    view_rows: list[dict] | None = None,
 ) -> dict:
     out = workdir() / "reports"
     out.mkdir(parents=True, exist_ok=True)
@@ -425,12 +485,12 @@ def write_report(
     html_path = out / f"{stem}.html"
     md_path.write_text(
         build_markdown(rows, title, group_by=group_by, bucket=bucket,
-                       top_per_period=top_per_period, insights=insights),
+                       top_per_period=top_per_period, insights=insights, view_rows=view_rows),
         encoding="utf-8",
     )
     html_path.write_text(
         build_html(rows, title, group_by=group_by, bucket=bucket,
-                   top_per_period=top_per_period, insights=insights),
+                   top_per_period=top_per_period, insights=insights, view_rows=view_rows),
         encoding="utf-8",
     )
     return {"markdown": str(md_path), "html": str(html_path)}

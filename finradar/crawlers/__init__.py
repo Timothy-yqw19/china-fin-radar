@@ -8,18 +8,22 @@ import yaml
 
 from ..utils import CONFIG_DIR, LOG
 from .base import BaseCrawler, get_crawler, register, registry  # noqa: F401
-from . import official, flash, ak_source, trends  # noqa: F401,E402
+from . import official, flash, ak_source, trends, feeds  # noqa: F401,E402
 from .official import ConfigListCrawler  # noqa: E402
 
 __all__ = [
     "BaseCrawler", "get_crawler", "register", "registry", "build_all",
-    "OFFICIAL", "FLASH", "TRENDS",
+    "OFFICIAL", "FLASH", "TRENDS", "EXTERNAL",
 ]
 
-OFFICIAL = ["gov", "pbc", "csrc", "nfra", "safe"]
+OFFICIAL = ["gov", "gov_yaowen", "pbc", "csrc", "nfra", "safe"]
 FLASH = ["em_flash", "em_breakfast", "cls", "ths_flash", "sina_flash"]
 # 大众热榜: 噪音大, 默认不抓, 用 --source trends 或 --source all
 TRENDS = ["toutiao_hot", "douyin_hot", "baidu_hot"]
+# 外部视角: 海外机构与媒体怎么解读中国政策(不参与政策打分排序)
+EXTERNAL = ["google_news", "rhodium", "fed", "worldbank"]
+# 权威媒体: 新华社 / 三大证券报 / 证券时报 / 政府网要闻（配置源里 kind=media 的也在内）
+MEDIA = ["gov_yaowen", "stcn"]
 
 
 @functools.lru_cache(maxsize=1)
@@ -38,6 +42,12 @@ def config_sources() -> tuple[dict, ...]:
 
 def config_source_ids() -> list[str]:
     return [str(c["id"]) for c in config_sources()]
+
+
+def media_source_ids() -> list[str]:
+    """权威媒体类来源: 固定的几个 + 配置里 kind=media 的."""
+    return list(dict.fromkeys([*MEDIA, *[str(c["id"]) for c in config_sources()
+                                         if c.get("kind") == "media"]]))
 
 
 def source_base_score(source_id: str) -> float:
@@ -66,6 +76,10 @@ def build_all(only: list[str] | None = None, pages: int = 1, fetcher=None):  # n
                 ids += FLASH
             elif name == "trends":
                 ids += TRENDS
+            elif name == "external":
+                ids += EXTERNAL
+            elif name == "media":
+                ids += media_source_ids()
             elif name in reg:
                 ids.append(name)
     seen, ordered = set(), []
@@ -82,8 +96,12 @@ def build_all(only: list[str] | None = None, pages: int = 1, fetcher=None):  # n
         if cid in seen:
             continue
         kind = cfg.get("kind", "official")
-        wanted = want_all or "config" in (only or []) or cid in (only or []) or (
-            "official" in (only or []) and kind == "official"
+        wanted = (
+            want_all
+            or "config" in (only or [])
+            or cid in (only or [])
+            or ("official" in (only or []) and kind == "official")
+            or ("media" in (only or []) and kind == "media")
         )
         if not wanted:
             continue

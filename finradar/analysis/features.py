@@ -80,6 +80,20 @@ def build_feature(
     feat = insight.feature or {}
     data_para = _sentences_from_corpus(insight, rows, min_score=min_score) if rows else ""
     _, latest = corpus_timeline(insight, rows, per_year=1, recent=5, min_score=min_score) if rows else ({}, [])
+    # 外部视角(海外媒体与机构): 英文报道要先做中英映射
+    external: list[dict] = []
+    if rows:
+        from .views import expand_keywords, pick_views
+
+        external = [
+            {
+                "date": (r.get("pub_date") or "")[:10],
+                "title": r.get("title"),
+                "url": r.get("url") or "",
+                "source": r.get("source_name") or r.get("source") or "",
+            }
+            for r in pick_views(rows, "external", expand_keywords(list(insight.keywords)), top=5)
+        ]
     return {
         "id": insight.id,
         "topic": insight.topic,
@@ -100,6 +114,7 @@ def build_feature(
             for r in latest
         ],
         "has_feature": bool(feat),
+        "external": external,
         "generated": now_cn().strftime("%Y-%m-%d"),
     }
 
@@ -122,6 +137,14 @@ def render_feature_markdown(art: dict) -> str:
         lines += ["## 数据支撑", "", art["data_paragraph"], ""]
     for sec in art.get("sections") or []:
         lines += [f"## {sec.get('title','')}", "", sec.get("body", ""), ""]
+    if art.get("external"):
+        lines += ["## 外部视角（海外机构与媒体怎么读）", ""]
+        for d in art["external"]:
+            if d.get("url"):
+                lines.append(f"- {d['date']}　[{d['title']}]({d['url']})　`{d['source']}`")
+            else:
+                lines.append(f"- {d['date']}　{d['title']}　`{d['source']}`")
+        lines.append("")
     if not art.get("sections"):
         lines += [
             "## 核心判断",
@@ -165,6 +188,18 @@ def render_feature_html(art: dict) -> str:
         parts.append(f"<h3>数据支撑</h3>{p(art['data_paragraph'])}")
     for sec in art.get("sections") or []:
         parts.append(f"<h3>{_h.escape(sec.get('title',''))}</h3>{p(sec.get('body',''))}")
+    if art.get("external"):
+        items = "".join(
+            "<li>"
+            + (
+                f"<a href='{_h.escape(d['url'])}' target='_blank' rel='noopener'>{_h.escape(d['title'])}</a>"
+                if d.get("url")
+                else _h.escape(d["title"] or "")
+            )
+            + f"<span class='m'>{_h.escape(d['date'])} · {_h.escape(d.get('source',''))}</span></li>"
+            for d in art["external"]
+        )
+        parts.append(f"<h3>外部视角（海外机构与媒体怎么读）</h3><ul class='docs'>{items}</ul>")
     if art.get("latest"):
         items = "".join(
             "<li>"

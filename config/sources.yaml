@@ -127,3 +127,64 @@ sources:
   #       item_selector: "li"
   #       link_selector: "a[href]"
   #       require_date: true
+
+  # ---- 权威媒体（2026-09-14 实测）----
+  - id: xinhua_fin
+    name: 新华社·财经
+    kind: media
+    base_score: 25
+    homepage: https://www.news.cn/fortune/index.htm
+    pages:
+      - url: https://www.news.cn/fortune/index.htm
+        channel: 新华社·财经
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
+
+  - id: xinhua_money
+    name: 新华社·金融
+    kind: media
+    base_score: 25
+    homepage: https://www.news.cn/money/
+    pages:
+      - url: https://www.news.cn/money/
+        channel: 新华社·金融
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
+
+  - id: cs_com
+    name: 中国证券报
+    kind: media
+    base_score: 25
+    homepage: https://www.cs.com.cn/
+    pages:
+      - url: https://www.cs.com.cn/
+        channel: 中国证券报
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
+
+  - id: zqrb
+    name: 证券日报
+    kind: media
+    base_score: 25
+    homepage: http://www.zqrb.cn/
+    pages:
+      - url: http://www.zqrb.cn/
+        channel: 证券日报
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
+
+  - id: cnstock
+    name: 上海证券报
+    kind: media
+    base_score: 25
+    homepage: https://www.cnstock.com/
+    pages:
+      - url: https://www.cnstock.com/
+        channel: 上海证券报
+        item_selector: "div"
+        link_selector: "a[href]"
+        require_date: true

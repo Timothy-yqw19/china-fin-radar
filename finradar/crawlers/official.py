@@ -178,6 +178,43 @@ class CSRCCrawler(BaseCrawler):
 
 
 @register
+class GovYaowenCrawler(BaseCrawler):
+    """中国政府网·要闻 —— 政府直接的新闻出口.
+
+    要闻列表页是 JS 渲染的, 但它读的是一个静态 JSON（实测 400 条, 含标题/链接/日期）,
+    所以直接抓那个 JSON 比解析 HTML 稳。
+    """
+
+    source_id = "gov_yaowen"
+    source_name = "中国政府网·要闻"
+    kind = "official"
+    homepage = "https://www.gov.cn/yaowen/liebiao/"
+    # 先验分仍守在 30 以内: 要闻里大量是例行的会见、会议, 靠关键词信号决定排序
+    base_score = 30.0
+    API = "https://www.gov.cn/yaowen/liebiao/YAOWENLIEBIAO.json"
+
+    def fetch(self) -> list[NewsItem]:
+        data = self.f.get_json(self.API, referer=self.homepage)
+        rows = data if isinstance(data, list) else ((data or {}).get("data") or [])
+        out = []
+        for r in rows[: self.pages * 200]:
+            title = (r.get("TITLE") or "").strip()
+            url = (r.get("URL") or "").strip()
+            if not title or not url:
+                continue
+            out.append(
+                self.item(
+                    title=title,
+                    url=url,
+                    published_at=parse_time(r.get("DOCRELPUBTIME")),
+                    summary=(r.get("SUB_TITLE") or "").strip(),
+                    channel="要闻",
+                )
+            )
+        return out
+
+
+@register
 class GovPolicyCrawler(BaseCrawler):
     """中国政府网政策文件库 —— 按关键词检索金融口径政策.
 

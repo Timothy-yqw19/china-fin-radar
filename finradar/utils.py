@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -163,6 +164,20 @@ def parse_time(raw: Any, default_today: bool = True) -> str:
             pass
     s = str(raw).strip().replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
     s = s.replace("T", " ").split(".")[0]
+    # RSS/Atom 常见 "2026-09-14T08:25:00Z"、"+08:00" 这类时区后缀, 去掉才能解析
+    s = re.sub(r"(Z|[+-]\d{2}:?\d{2})$", "", s.strip()).strip()
+    # RSS 2.0 的 RFC-822 格式: "Mon, 14 Sep 2026 08:25:00 GMT"
+    if "," in s and any(m in s for m in ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")):
+        from email.utils import parsedate_to_datetime
+
+        try:
+            dt = parsedate_to_datetime(str(raw).strip())
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(CN_TZ)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError, IndexError):
+            pass
     for fmt in (
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",

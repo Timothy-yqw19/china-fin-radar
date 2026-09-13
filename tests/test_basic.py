@@ -836,3 +836,123 @@ def test_update_command_registered():
     for flag in ("--full", "--start", "--quiet", "--no-rescore", "--no-backfill", "--no-site"):
         assert flag in p.format_help() or True
     assert p.parse_args(["update", "--full", "--no-site"]).full is True
+
+
+# ---------------------------------------------------------------- 权威媒体与外部视角
+
+RSS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>t</title>
+<item><title>China to continue capital market reform</title>
+<link>https://example.com/a</link><pubDate>Sun, 13 Sep 2026 22:05:00 +0800</pubDate>
+<description>&lt;p&gt;The regulator said ...&lt;/p&gt;</description><source>Reuters</source></item>
+</channel></rss>"""
+
+ATOM_SAMPLE = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+ <entry><title>China Economic Update</title>
+  <link href="https://example.com/b"/>
+  <updated>2026-06-01T08:00:00Z</updated>
+  <summary>Growth outlook</summary></entry>
+</feed>"""
+
+
+def test_parse_feed_rss_and_atom():
+    from finradar.crawlers.feeds import parse_feed, strip_html
+
+    rss = parse_feed(RSS_SAMPLE)
+    assert len(rss) == 1
+    assert rss[0]["title"].startswith("China to continue")
+    assert rss[0]["url"] == "https://example.com/a"
+    assert rss[0]["source"] == "Reuters"
+    assert "The regulator said" in strip_html(rss[0]["summary"])
+
+    atom = parse_feed(ATOM_SAMPLE)
+    assert len(atom) == 1 and atom[0]["url"] == "https://example.com/b"
+    assert atom[0]["published"].startswith("2026-06-01")
+
+
+def test_rss_datetime_formats():
+    """RSS 的 RFC-822 与 ISO 的 Z/+08:00 后缀都要能解析（否则时间会全变成"今天"）."""
+    from finradar.utils import parse_time
+
+    assert parse_time("Sun, 13 Sep 2026 22:05:00 +0800") == "2026-09-13 22:05:00"
+    assert parse_time("2026-09-14T08:25:00Z") == "2026-09-14 08:25:00"
+    assert parse_time("2014-05-30T08:25:00Z").startswith("2014-05-30")
+
+
+def test_domestic_media_and_external_sources_registered():
+    from finradar.crawlers import EXTERNAL, media_source_ids, registry
+
+    reg = set(registry())
+    assert {"gov_yaowen", "google_news", "rhodium", "fed", "worldbank"} <= reg
+    assert set(EXTERNAL) <= reg
+    ids = media_source_ids()
+    assert "gov_yaowen" in ids and "stcn" in ids
+    # 配置里的权威媒体也要算进来
+    assert {"xinhua_fin", "xinhua_money", "cs_com", "zqrb", "cnstock"} <= set(ids)
+
+
+def test_gov_yaowen_parses_static_json():
+    """政府网要闻是 JS 渲染的页面 + 静态 JSON, 直接解析 JSON 更稳."""
+    from finradar.crawlers.official import GovYaowenCrawler
+
+    class F:
+        def get_json(self, url, **kw):
+            return [
+                {"TITLE": "《金融强国建设“十五五”规划》正式出台",
+                 "URL": "https://www.gov.cn/lianbo/2026/content_1.htm",
+                 "DOCRELPUBTIME": "2026-09-10", "SUB_TITLE": ""},
+                {"TITLE": "", "URL": "https://x", "DOCRELPUBTIME": "2026-09-10"},  # 空标题丢弃
+            ]
+
+    items = GovYaowenCrawler(fetcher=F(), pages=1).run()
+    assert len(items) == 1
+    assert items[0].date == "2026-09-10"
+    assert items[0].source == "gov_yaowen"
+    assert GovYaowenCrawler.base_score <= 30, "要闻的先验分不能顶到 100 分"
+
+
+def test_external_keyword_expansion_and_pick():
+    """海外报道是英文: 中文热词要先映射成英文说法才能匹配上."""
+    from finradar.analysis.views import expand_keywords, pick_views
+
+    kw = expand_keywords(["货币政策", "人民币", "房地产"])
+    assert "monetary policy" in kw and "yuan" in kw and "property" in kw
+
+    rows = [
+        {"title": "PBoC sets firmer USD/CNY fixing", "summary": "", "source": "google_news",
+         "source_name": "Google News（海外媒体）", "pub_date": "2026-09-11",
+         "policy_score": 0, "url": "https://x/1"},
+        {"title": "某公司发布回购公告", "summary": "", "source": "cs_com",
+         "source_name": "中国证券报", "pub_date": "2026-09-11", "policy_score": 60,
+         "url": "https://x/2"},
+        {"title": "Unrelated sports news", "summary": "", "source": "google_news",
+         "source_name": "Google News（海外媒体）", "pub_date": "2026-09-11",
+         "policy_score": 0, "url": "https://x/3"},
+    ]
+    ext = pick_views(rows, "external", kw, top=5)
+    assert [r["url"] for r in ext] == ["https://x/1"]
+    media = pick_views(rows, "media", ["回购"], top=5)
+    assert [r["url"] for r in media] == ["https://x/2"]
+
+
+def test_report_includes_media_and_external_sections():
+    """报告要同时给出"官方原文 + 权威媒体 + 海外解读"三重视角."""
+    from finradar.analysis.report import build_markdown
+
+    rows = [
+        {"title": "央行开展买断式逆回购操作", "summary": "货币政策", "pub_date": "2026-09-13",
+         "policy_score": 80, "tags": ["货币政策"], "hotwords": ["逆回购"],
+         "url": "u1", "source_name": "中国人民银行", "doc_no": ""},
+    ]
+    view_rows = rows + [
+        {"title": "央行将连续4天开展隔夜逆回购操作", "summary": "", "pub_date": "2026-09-11",
+         "policy_score": 0, "tags": [], "hotwords": [], "url": "m1",
+         "source": "xinhua_money", "source_name": "新华社·金融", "doc_no": ""},
+        {"title": "PBOC is expected to ease monetary policy", "summary": "",
+         "pub_date": "2026-09-12", "policy_score": 0, "tags": [], "hotwords": [], "url": "e1",
+         "source": "google_news", "source_name": "Google News（海外媒体）", "doc_no": ""},
+    ]
+    md = build_markdown(rows, title="日报", view_rows=view_rows)
+    assert "媒体视角" in md and "新华社·金融" in md
+    assert "外部视角" in md and "Google News" in md

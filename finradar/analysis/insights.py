@@ -129,6 +129,20 @@ def render_insight(
 
     if rows:
         by_year, latest = corpus_timeline(insight, rows, per_year=per_year, recent=recent)
+        # 外部视角: 海外机构与媒体怎么读这条线(英文报道, 需要中英映射)
+        from .views import expand_keywords, pick_views
+
+        ext = pick_views(rows, "external", expand_keywords(list(insight.keywords)), top=5)
+        if ext:
+            lines.append("■ 外部视角（海外机构与媒体怎么读）")
+            for r in ext:
+                lines.append(
+                    f"  {(r.get('pub_date') or '')[:10]}  {r.get('title')}"
+                    f"　（{r.get('source_name') or r.get('source')}）"
+                )
+                if r.get("url"):
+                    lines.append(f"      {r['url']}")
+            lines.append("")
         if by_year:
             lines.append("■ 脉络（自动聚合自库内文件，按年）")
             for y in sorted(by_year):
