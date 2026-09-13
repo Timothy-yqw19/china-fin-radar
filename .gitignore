@@ -16,3 +16,5 @@ output/
 .vscode/
 .pytest_cache/
 .ruff_cache/
+.Rhistory
+public/

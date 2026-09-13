@@ -341,5 +341,20 @@ q("#nNews").textContent = num(D.n_news);
 q("#cover").textContent = D.coverage || "—";
 q("#gen").textContent = D.generated || "—";
 renderFeatures(); renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
+
+// 公开静态版（没有本地语料库）: 说明一句, 免得读者以为是页面出错
+if (!D.n_news) {
+  const note = document.createElement("div");
+  note.className = "note";
+  note.innerHTML = "<b>这是公开静态版</b>：只包含仓库里的数据（专题、报道、名词档案、题库）。"
+    + "「数据支撑」段与「候选新词」需要本地语料库——在本机运行 <code>finradar update</code> "
+    + "后重新生成即可，详见仓库 README。";
+  const main = document.querySelector("main");
+  if (main && main.firstChild && main.insertBefore) {
+    main.insertBefore(note, main.firstChild);
+  } else if (main && main.appendChild) {
+    main.appendChild(note);
+  }
+}
 })();
 </script>

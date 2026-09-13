@@ -1,0 +1,49 @@
+name: pages
+
+# 把仓库里的内容直接发布成网页（GitHub Pages）：
+#   index.html  专题报道 + 洞察速查 + 名词档案 + 候选词
+#   kb.html     词库刷题页（52 词 / 62 题，进度存本机）
+#   docs/       考点手册等 Markdown
+#
+# 只用仓库内的 YAML 数据构建，不需要本地抓取数据库，所以在 CI 里也能跑。
+# 首次使用：仓库 Settings → Pages → Source 选 "GitHub Actions"，之后每次推送自动更新。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装依赖
+        run: pip install -e .
+      - name: 构建静态站点
+        run: python scripts/build_static_site.py --out-dir public
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

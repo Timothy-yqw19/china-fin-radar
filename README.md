@@ -31,6 +31,24 @@
 
 ---
 
+## 网页版（GitHub Pages）
+
+推送到 main 后，GitHub Actions 会自动把仓库内容发布成网页：
+
+| 页面 | 内容 |
+|---|---|
+| `index.html` | 专题报道（8 篇）+ 洞察速查 + 名词档案（52 条）+ 候选新词 |
+| `kb.html` | 词库刷题页（52 词 / 62 题，进度存本机） |
+| `docs/` | 考点手册等 Markdown |
+
+**首次需要手动开启一次**：仓库 `Settings → Pages → Source` 选 **GitHub Actions**，
+之后每次推送自动更新（工作流见 `.github/workflows/pages.yml`）。
+
+> 公开页是"静态版"：只用仓库里的数据文件构建，**不含**需要本地语料库的
+> 「数据支撑」段与候选新词。要在本机看完整版：`finradar update` 后打开 `output/insights.html`。
+
+---
+
 ## 快速开始
 
 ```bash
