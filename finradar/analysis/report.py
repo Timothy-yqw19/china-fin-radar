@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 import re
 
+from pathlib import Path
+
 from ..utils import now_cn, workdir
 from .hotwords import combined_hotwords
 
@@ -124,6 +126,12 @@ def _md_to_html(md: str) -> str:
     in_list = False
     for raw in (md or "").splitlines():
         line = raw.rstrip()
+        if line.startswith("## "):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append(f"<h2>{_inline(line[3:])}</h2>")
+            continue
         if line.startswith("- "):
             if not in_list:
                 out.append("<ul>")
@@ -145,6 +153,80 @@ def _md_to_html(md: str) -> str:
     return "".join(out)
 
 
+def formal_md_to_html(md: str) -> str:
+    """公文版 Markdown → HTML: 支持 ##/### 标题、无序与有序列表、表格、续行."""
+    out: list[str] = []
+    in_ul = in_ol = in_table = False
+
+    def close_all() -> None:
+        nonlocal in_ul, in_ol, in_table
+        if in_ul:
+            out.append("</ul>")
+            in_ul = False
+        if in_ol:
+            out.append("</ol>")
+            in_ol = False
+        if in_table:
+            out.append("</tbody></table>")
+            in_table = False
+
+    for raw in (md or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if all(set(c) <= set("-: ") for c in cells):
+                continue  # 分隔行
+            if not in_table:
+                out.append("<table><thead><tr>")
+                out.append("".join(f"<th>{_inline(c)}</th>" for c in cells))
+                out.append("</tr></thead><tbody>")
+                in_table = True
+            else:
+                out.append("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in cells) + "</tr>")
+            continue
+        if in_table and not stripped.startswith("|"):
+            close_all()
+        if not stripped:
+            close_all()
+            continue
+        if stripped.startswith("### "):
+            close_all()
+            out.append(f"<h3>{_inline(stripped[4:])}</h3>")
+            continue
+        if stripped.startswith("## "):
+            close_all()
+            out.append(f"<h2>{_inline(stripped[3:])}</h2>")
+            continue
+        if stripped.startswith("# "):
+            close_all()
+            out.append(f"<h1 class='doc-title'>{_inline(stripped[2:])}</h1>")
+            continue
+        import re as _re
+
+        m = _re.match(r"^(\d+)\.\s+(.*)$", stripped)
+        if m:
+            if not in_ol:
+                close_all()
+                out.append("<ol>")
+                in_ol = True
+            out.append(f"<li>{_inline(m.group(2))}</li>")
+            continue
+        if stripped.startswith("- "):
+            if not in_ul:
+                close_all()
+                out.append("<ul>")
+                in_ul = True
+            out.append(f"<li>{_inline(stripped[2:])}</li>")
+            continue
+        if line.startswith("    "):  # 缩进续行: 条目下的补充说明
+            out.append(f"<p class='cont'>{_inline(stripped)}</p>")
+            continue
+        out.append(f"<p>{_inline(stripped)}</p>")
+    close_all()
+    return "".join(out)
+
+
 def _inline(text: str) -> str:
     import re
 
@@ -152,6 +234,191 @@ def _inline(text: str) -> str:
     s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
     return s
+
+
+# ---------------------------------------------------------------- 公文文风
+
+CN_DIGITS = "一二三四五六七八九十"
+
+
+def _cn_num(i: int) -> str:
+    """1 -> 一, 11 -> 十一（用于公文式编号）."""
+    if i <= 10:
+        return CN_DIGITS[i - 1]
+    if i < 20:
+        return "十" + CN_DIGITS[i - 11]
+    return str(i)
+
+
+def _cn_date(iso: str) -> str:
+    s = (iso or "")[:10]
+    try:
+        y, m, d = s.split("-")
+        return f"{y}年{int(m)}月{int(d)}日"
+    except ValueError:
+        return s
+
+
+def _span_text(rows: list[dict]) -> str:
+    dates = sorted((r.get("pub_date") or "")[:10] for r in rows if (r.get("pub_date") or ""))
+    if not dates:
+        return "—"
+    return f"{_cn_date(dates[0])}至{_cn_date(dates[-1])}"
+
+
+def _trim(text: str, n: int = 120) -> str:
+    t = " ".join((text or "").split())
+    return t if len(t) <= n else t[: n - 1] + "…"
+
+
+def build_formal_markdown(
+    rows: list[dict],
+    title: str,
+    top_hot: int,
+    group_by: str,
+    bucket: str,
+    top_per_period: int,
+    insights: list | None,
+    view_rows: list[dict] | None,
+    translate: str,
+) -> str:
+    """公文/申论体: 标题 → 编制说明 → 分章编号 → 数据来源与口径."""
+    raw_n = len(rows)
+    rows = dedupe_rows(rows)
+    hot = combined_hotwords(rows)
+    vr = view_rows if view_rows is not None else rows
+    span = _span_text(rows)
+    lines = [f"# {title}", "", span, ""]
+    lines += [
+        f"**编制时间**：{now_cn().strftime('%Y年%m月%d日 %H:%M')}（北京时间）",
+        f"**统计区间**：{span}",
+        f"**样本数量**：本轮收录 {raw_n} 条，经跨源合并后 {len(rows)} 条"
+        + (f"（合并 {raw_n - len(rows)} 条同源转载）" if raw_n != len(rows) else ""),
+        f"**数据覆盖**：{_coverage(rows) or '—'}",
+        "**使用说明**：本通报用于政策学习与信息整理，不构成投资建议；"
+        "政策口径以官方原文为准，涉及数据请按标注时点核对。",
+        "",
+    ]
+
+    from .views import expand_keywords, pick_views, translate_titles
+
+    # 一、政策热词情况
+    if hot:
+        lines += ["## 一、政策热词情况", ""]
+        lines += [
+            "本区间内，政策文本与新闻中出现频次较高的政策提法如下：",
+            "",
+            "| 序号 | 政策提法 | 出现频次 |",
+            "| --- | --- | --- |",
+        ]
+        for i, (w, n) in enumerate(hot.most_common(top_hot), 1):
+            lines.append(f"| {i} | {w} | {n} |")
+        lines.append("")
+        idx = 2
+    else:
+        idx = 1
+
+    # 二、重点政策与市场动态
+    lines += [f"## {_cn_num(idx)}、重点政策与市场动态", ""]
+    if group_by == "time":
+        groups = _group_by_time(rows, bucket)
+        for gi, (key, items) in enumerate(groups, 1):
+            lines += [f"### （{_cn_num(gi)}）{key}（{len(items)} 条）", ""]
+            for r in items[:top_per_period]:
+                lines += _formal_item(r, 1)
+            lines.append("")
+    else:
+        for gi, (board, items) in enumerate(_group(rows).items(), 1):
+            lines += [f"### （{_cn_num(gi)}）{board}（{len(items)} 条）", ""]
+            for r in sorted(items, key=lambda x: -float(x.get("policy_score") or 0))[:20]:
+                lines += _formal_item(r, 1)
+            lines.append("")
+    idx += 1
+
+    # 三、媒体与外部视角
+    hot_words = [w for w, _ in hot.most_common(24)] if hot else []
+    media = pick_views(vr, "media", hot_words, top=8)
+    external = pick_views(vr, "external", expand_keywords(hot_words), top=8)
+    note = ""
+    if not external:
+        external = pick_views(vr, "external", None, top=5)
+        if external:
+            note = "（以下为近期海外动态，与本期热词未直接对应）"
+    if media or external:
+        lines += [f"## {_cn_num(idx)}、媒体与外部视角", ""]
+        if media:
+            lines += ["### （一）权威媒体报道", ""]
+            for i, r in enumerate(media, 1):
+                src = r.get("source_name") or r.get("source") or ""
+                lines.append(
+                    f"{i}. [{r.get('title')}]({r.get('url')})（{src}，"
+                    f"{_cn_date(r.get('pub_date'))}）"
+                )
+            lines.append("")
+        if external:
+            lines += [f"### （二）海外机构与媒体解读{note}", ""]
+            zh = translate_titles(external, backend=translate)
+            for i, r in enumerate(external, 1):
+                src = r.get("source_name") or r.get("source") or ""
+                lines.append(
+                    f"{i}. [{r.get('title')}]({r.get('url')})（{src}，"
+                    f"{_cn_date(r.get('pub_date'))}）"
+                )
+                if zh.get(r.get("title") or ""):
+                    lines.append(f"   译：{zh[r['title']]}")
+            lines.append("")
+        idx += 1
+
+    # 四、专题分析
+    if insights:
+        from .insights import render_brief
+
+        lines += [f"## {_cn_num(idx)}、专题分析", ""]
+        for it in insights:
+            lines.append(render_brief(it, rows))
+        idx += 1
+
+    # 五、数据来源与口径
+    lines += [
+        f"## {_cn_num(idx)}、数据来源与口径说明",
+        "",
+        "**（一）数据来源**：中国政府网政策文件库、国务院及各部委网站、"
+        "中国人民银行、国家外汇管理局、中国证监会、国家金融监督管理总局、"
+        "财政部、国家发展改革委、国家统计局、中国证券投资基金业协会、"
+        "新华社、中国证券报、上海证券报、证券日报、证券时报等权威媒体，"
+        "以及公开财经资讯渠道。",
+        "",
+        "**（二）评分口径**：政策相关度评分区间为 0 至 100 分，由政策动作、发文主体、"
+        "货币与资本市场等六类关键词加权生成，并对噪音信息与例行事项作降权处理。",
+        "",
+        "**（三）去重口径**：同一文件被多个渠道转载的，按标题与文号合并，"
+        "仅保留政策相关度最高的一条，并标注同源报道。",
+        "",
+        "**（四）免责声明**：本通报为个人学习整理的成果，不代表任何机构立场；"
+        "涉及政策表述与数据，均应以官方发布原文及最新口径为准。",
+        "",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _formal_item(r: dict, n: int) -> list[str]:
+    """公文式的单条条目: 标题 + 来源时点 + 主要内容 + 政策传导路径."""
+    date = _cn_date(r.get("pub_date"))
+    src = r.get("source_name") or r.get("source") or ""
+    title = r.get("title") or ""
+    url = r.get("url") or ""
+    score = r.get("policy_score")
+    head = f"{n}. [{title}]({url})" if url else f"{n}. {title}"
+    out = [head]
+    meta = f"   来源：{src}；时间：{date}；政策相关度：{score}"
+    if r.get("doc_no"):
+        meta += f"；文号：{r['doc_no']}"
+    out.append(meta)
+    if r.get("summary"):
+        out.append(f"   主要内容：{_trim(r.get('summary'))}")
+    if r.get("impact"):
+        out.append(f"   政策传导路径：{r['impact']}")
+    return out
 
 
 def build_markdown(
@@ -164,7 +431,13 @@ def build_markdown(
     insights: list | None = None,
     view_rows: list[dict] | None = None,
     translate: str = "none",
+    style: str = "formal",
 ) -> str:
+    if style == "formal":
+        return build_formal_markdown(
+            rows, title, top_hot, group_by, bucket, top_per_period,
+            insights, view_rows, translate,
+        )
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
     rows = dedupe_rows(rows)
@@ -313,6 +586,78 @@ def build_markdown(
     return "\n".join(lines)
 
 
+FORMAL_HTML_TPL = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+:root{{--ink:#1a1a1a;--paper:#ffffff;--rule:#c0392b;--line:#dcdcdc;--mut:#6b6b6b;--bg:#f4f2ee}}
+@media (prefers-color-scheme:dark){{
+ :root{{--ink:#e9e6e1;--paper:#17191c;--rule:#c96a5a;--line:#2c3036;--mut:#9a958c;--bg:#101215}}
+}}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--bg);color:var(--ink);
+ font:16px/1.95 "Noto Serif SC","Songti SC",SimSun,Georgia,serif}}
+.wrap{{max-width:820px;margin:0 auto;padding:40px 26px 80px;background:var(--paper);
+ box-shadow:0 1px 3px rgba(0,0,0,.08)}}
+.head{{text-align:center;border-bottom:3px double var(--rule);padding-bottom:14px;margin-bottom:6px}}
+.org{{color:var(--rule);letter-spacing:.35em;font-size:12.5px}}
+h1.doc-title{{font-size:26px;margin:10px 0 4px;letter-spacing:.08em}}
+.doc-no{{color:var(--mut);font-size:12.5px}}
+.meta{{border:1px solid var(--line);background:var(--bg);padding:12px 16px;margin:18px 0 26px;
+ font-size:13.5px;line-height:1.9}}
+.meta p{{margin:2px 0}}
+h2{{font-size:18px;margin:30px 0 10px;padding-left:0;letter-spacing:.04em}}
+h3{{font-size:15.5px;margin:20px 0 8px;color:var(--rule)}}
+p{{margin:8px 0;text-align:justify}}
+p.cont{{margin:2px 0 2px 1.6em;font-size:14.5px;color:#333}}
+@media (prefers-color-scheme:dark){{p.cont{{color:#cfcbc2}}}}
+ol,ul{{padding-left:1.6em}} li{{margin:6px 0}}
+ol{{counter-reset:none}}
+table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:14.5px}}
+th,td{{border:1px solid var(--line);padding:6px 10px;text-align:left}}
+th{{background:var(--bg);font-weight:700}}
+a{{color:inherit;text-decoration:none;border-bottom:1px solid var(--line)}}
+a:hover{{color:var(--rule)}}
+.foot{{margin-top:40px;border-top:1px solid var(--line);padding-top:12px;color:var(--mut);font-size:12.5px;text-align:center}}
+@media print{{body{{background:#fff}} .wrap{{box-shadow:none;max-width:none}}}}
+</style></head><body><div class="wrap">
+<div class="head"><div class="org">金融政策研究</div>
+<h1 class="doc-title">{title}</h1><div class="doc-no">{doc_no}</div></div>
+{body}
+<div class="foot">本通报由 finradar 自动编制 · 生成时间 {now}（北京时间） · 政策以官方原文为准</div>
+</div></body></html>"""
+
+
+def build_formal_html(
+    rows: list[dict],
+    title: str,
+    top_hot: int,
+    group_by: str,
+    bucket: str,
+    top_per_period: int,
+    insights: list | None,
+    view_rows: list[dict] | None,
+    translate: str,
+) -> str:
+    md = build_formal_markdown(
+        rows, title, top_hot, group_by, bucket, top_per_period, insights, view_rows, translate
+    )
+    # 先剥掉首个一级标题(模板里单独渲染)和紧随其后的区间行
+    lines = md.split("\n")
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    doc_no = "内部学习参考资料"
+    if lines and lines[0].strip() and not lines[0].startswith(("*", "#", "|")):
+        doc_no = lines[0].strip()
+        lines = lines[1:]
+    body = formal_md_to_html("\n".join(lines))
+    return FORMAL_HTML_TPL.format(
+        title=html.escape(title), doc_no=html.escape(doc_no),
+        now=now_cn().strftime("%Y-%m-%d %H:%M"), body=body,
+    )
+
+
 HTML_TPL = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -351,7 +696,13 @@ def build_html(
     insights: list | None = None,
     view_rows: list[dict] | None = None,
     translate: str = "none",
+    style: str = "formal",
 ) -> str:
+    if style == "formal":
+        return build_formal_html(
+            rows, title, 15, group_by, bucket, top_per_period,
+            insights, view_rows, translate,
+        )
     now = now_cn().strftime("%Y-%m-%d %H:%M")
     raw_n = len(rows)
     rows = dedupe_rows(rows)
@@ -490,6 +841,7 @@ def write_report(
     insights: list | None = None,
     view_rows: list[dict] | None = None,
     translate: str = "none",
+    style: str = "formal",
 ) -> dict:
     out = workdir() / "reports"
     out.mkdir(parents=True, exist_ok=True)
@@ -499,13 +851,70 @@ def write_report(
     md_path.write_text(
         build_markdown(rows, title, group_by=group_by, bucket=bucket,
                        top_per_period=top_per_period, insights=insights, view_rows=view_rows,
-                       translate=translate),
+                       translate=translate, style=style),
         encoding="utf-8",
     )
     html_path.write_text(
         build_html(rows, title, group_by=group_by, bucket=bucket,
                    top_per_period=top_per_period, insights=insights, view_rows=view_rows,
-                   translate=translate),
+                   translate=translate, style=style),
         encoding="utf-8",
     )
     return {"markdown": str(md_path), "html": str(html_path)}
+
+
+INDEX_TPL = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>金融政策通报 · 归档</title>
+<style>
+:root{--ink:#1a1a1a;--paper:#fff;--line:#e2ddd3;--mut:#6b6b6b;--bg:#f5f3ef;--acc:#9c3b2e}
+@media (prefers-color-scheme:dark){:root{--ink:#e9e6e1;--paper:#17191c;--line:#2c3036;
+ --mut:#9a958c;--bg:#101215;--acc:#d98a78}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:16px/1.8 "Noto Serif SC","Songti SC",SimSun,Georgia,serif}
+.wrap{max-width:760px;margin:0 auto;padding:44px 24px 80px}
+h1{font-size:24px;margin:0 0 6px;letter-spacing:.06em}
+.sub{color:var(--mut);font-size:13px;margin-bottom:28px}
+.item{background:var(--paper);border:1px solid var(--line);border-radius:10px;
+ padding:14px 18px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline}
+.item .d{font-family:ui-monospace,Menlo,monospace;color:var(--acc);font-size:13.5px}
+.item a{color:inherit;text-decoration:none;border-bottom:1px solid var(--line)}
+.item a:hover{color:var(--acc)}
+.item .n{color:var(--mut);font-size:12.5px;margin-left:auto}
+.foot{margin-top:34px;color:var(--mut);font-size:12.5px;text-align:center}
+</style></head><body><div class="wrap">
+<h1>金融政策通报 · 归档</h1>
+<div class="sub">__COUNT__ 期 · 最近更新 __NOW__（北京时间） · 按日期倒序</div>
+__ITEMS__
+<div class="foot">由 finradar 自动生成 · 政策以官方原文为准 · 不构成投资建议</div>
+</div></body></html>"""
+
+
+def write_report_index(directory: str | Path, limit: int = 60) -> Path:
+    """为 docs/reports/ 生成索引页, 让 GitHub Pages 上能按日期浏览历史通报."""
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    htmls = sorted(d.glob("report_*.html"), reverse=True)[:limit]
+    rows_html = []
+    for h in htmls:
+        stem = h.stem
+        date = stem.replace("report_", "")
+        cn = _cn_date(f"{date[:4]}-{date[4:6]}-{date[6:8]}") if len(date) == 8 else date
+        md = h.with_suffix(".md")
+        size = f"{h.stat().st_size // 1024} KB"
+        rows_html.append(
+            f"<div class='item'><span class='d'>{cn}</span>"
+            f"<a href='{h.name}'>金融政策通报（{cn}）</a>"
+            + (f"<a href='{md.name}' style='font-size:13px'>Markdown</a>" if md.exists() else "")
+            + f"<span class='n'>{size}</span></div>"
+        )
+    out = d / "index.html"
+    out.write_text(
+        INDEX_TPL.replace("__COUNT__", str(len(htmls)))
+        .replace("__NOW__", now_cn().strftime("%Y-%m-%d %H:%M"))
+        .replace("__ITEMS__", "\n".join(rows_html) or "<p>还没有归档的通报。</p>"),
+        encoding="utf-8",
+    )
+    return out

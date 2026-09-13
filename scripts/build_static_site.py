@@ -32,7 +32,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     # 1) 专题洞察网页: rows=[] 表示"没有语料统计", 其余内容(专题/报道/名词/题库)照旧
-    payload = build_payload([], candidates=False)
+    payload = build_payload([], candidates=False, reports_url="docs/reports/index.html")
     (out / "index.html").write_text(render_site(payload), encoding="utf-8")
 
     # 2) 词库刷题页: 复用现成的构建脚本(按文件路径加载, 免得依赖 scripts 是包)
@@ -52,12 +52,10 @@ def main() -> None:
     # 3) GitHub Pages 默认会跑 Jekyll, 关掉它(下划线开头的文件会被忽略)
     (out / ".nojekyll").write_text("", encoding="utf-8")
 
-    # 4) 顺手把 docs/ 里的手册也带上, 方便直接看
+    # 4) 把 docs/ 整个带上: 手册、使用说明、以及 finradar publish 归档的通报
     docs = ROOT / "docs"
     if docs.exists():
-        (out / "docs").mkdir(exist_ok=True)
-        for f in docs.glob("*.md"):
-            shutil.copy2(f, out / "docs" / f.name)
+        shutil.copytree(docs, out / "docs", dirs_exist_ok=True)
 
     print(f"已生成静态站点 → {out}")
     print(f"  index.html（专题 {len(payload['insights'])} 条 / 名词 {len(payload['terms'])} 条）")

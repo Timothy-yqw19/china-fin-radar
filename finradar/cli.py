@@ -303,6 +303,65 @@ def cmd_backfill(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_publish(a: argparse.Namespace) -> int:
+    """生成一期报告并归档到 docs/reports/, 让网站(GitHub Pages)上能按日期浏览.
+
+    流程: 生成报告 → 复制到 docs/reports/ → 生成索引页 → （可选）git 提交推送。
+    默认只写文件并打印命令; 加 --push 才会真的提交推送。
+    """
+    import shutil
+    import subprocess
+
+    store = Store(a.db)
+    since, label, span = resolve_window(a.window, a.days)
+    rows = store.query(since=since, min_score=a.min_score, limit=10**6)
+    if not rows:
+        print("库里没有符合条件的数据，先跑 `finradar update`。")
+        return 1
+    title = a.title or ("金融政策回顾" if (span is None or span >= 180) else "金融政策动态通报")
+    group_by = "time" if (span is None or span >= 180) else "issue"
+    bucket = auto_bucket(span)
+
+    from .analysis.report import write_report, write_report_index
+
+    paths = write_report(
+        rows, title=title, stem=a.stem, group_by=group_by, bucket=bucket,
+        top_per_period=a.per_period, view_rows=store.query(since=since, min_score=0.0, limit=10**6),
+        translate=a.translate, style=a.style,
+    )
+    dest = Path(a.dir or "docs/reports")
+    dest.mkdir(parents=True, exist_ok=True)
+    for p in paths.values():
+        shutil.copy2(p, dest / Path(p).name)
+    # 只保留最近 N 期, 免得仓库越滚越大
+    files = sorted(dest.glob("report_*"), reverse=True)
+    for f in files[a.keep * 2 :]:
+        f.unlink()
+    idx = write_report_index(dest, limit=a.keep)
+    kept = len(list(dest.glob("report_*.html")))
+    print(f"已生成报告：{paths['markdown']}\n           {paths['html']}")
+    print(f"已归档到 {dest}（共 {kept} 期）\n索引页：{idx}")
+
+    if not a.push:
+        print(
+            "\n要发布到网站，执行：\n"
+            f"  git add {dest} && git commit -m 'docs: 归档 {label} 政策通报' && git push"
+            "\n（或下次加 --push 让本命令直接完成）"
+        )
+        return 0
+    try:
+        subprocess.run(["git", "add", str(dest)], check=True, cwd=Path.cwd())
+        subprocess.run(
+            ["git", "commit", "-m", f"docs: 归档{label}政策通报"], check=True, cwd=Path.cwd()
+        )
+        subprocess.run(["git", "push"], check=True, cwd=Path.cwd())
+        print("\n已提交并推送，网站会在 1 分钟内更新。")
+    except subprocess.CalledProcessError as e:
+        print(f"\ngit 操作失败（{e}）：请手动提交 {dest}")
+        return 1
+    return 0
+
+
 def cmd_rescore(a: argparse.Namespace) -> int:
     """改完 config/keywords.yaml 后, 把库里已有条目重新打一遍分 (不用重抓)."""
     from .crawlers import source_base_score
@@ -383,6 +442,7 @@ def cmd_report(a: argparse.Namespace) -> int:
         # 媒体与外部视角单独取一遍(不套 min-score): 它们是给正文做补充说明的
         view_rows=store.query(since=since, min_score=0.0, limit=10**6),
         translate=a.translate,
+        style=a.style,
     )
     print(f"Markdown: {paths['markdown']}\nHTML:     {paths['html']}")
     return 0
@@ -883,6 +943,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="海外条目标题的中文翻译（默认 auto=mymemory；--translate none 关闭）",
     )
     s.add_argument(
+        "--style", choices=["formal", "plain"], default="formal",
+        help="文风：formal=公文/申论体（默认）；plain=口语速览版",
+    )
+    s.add_argument(
         "--insights", action="store_true",
         help="附带专题洞察与展望（脉络 / 现状 / 各主体可能的动作）",
     )
@@ -893,6 +957,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--limit", type=int, default=5000)
     s.add_argument("--title", default=None)
     s.set_defaults(func=cmd_report)
+
+    s = sub.add_parser("publish", help="生成一期报告并归档到网站（docs/reports/）")
+    s.add_argument("--window", default="7d", help="报告区间，默认近 7 天（也支持 1m/1y/all）")
+    s.add_argument("--days", type=int, default=None)
+    s.add_argument("--min-score", type=float, default=55.0)
+    s.add_argument("--per-period", type=int, default=8)
+    s.add_argument("--title", default=None)
+    s.add_argument("--stem", default=None, help="文件名（默认按日期）")
+    s.add_argument("--dir", default=None, help="归档目录，默认 docs/reports")
+    s.add_argument("--keep", type=int, default=30, help="最多保留多少期")
+    s.add_argument("--style", choices=["formal", "plain"], default="formal")
+    s.add_argument(
+        "--translate", choices=["auto", "mymemory", "codex", "none"], default="auto",
+    )
+    s.add_argument("--push", action="store_true", help="自动 git add/commit/push")
+    s.set_defaults(func=cmd_publish)
 
     s = sub.add_parser("stats", help="库存与刷题统计")
     s.set_defaults(func=cmd_stats)

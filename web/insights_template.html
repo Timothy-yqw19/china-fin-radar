@@ -120,6 +120,7 @@ __STYLE__
 </main>
 
 <footer class="foot">
+  <div id="reportsNav" style="margin-bottom:8px"></div>
   语料覆盖 <span id="cover">—</span>，生成于 <span id="gen">—</span>。
   　内容用于求职学习整理，不构成投资建议；政策以官方原文为准，数字请按标注的截止时点核对最新来源。
 </footer>
@@ -340,6 +341,10 @@ q("#nCand").textContent = D.candidates.length;
 q("#nNews").textContent = num(D.n_news);
 q("#cover").textContent = D.coverage || "—";
 q("#gen").textContent = D.generated || "—";
+if (D.reports_url) {
+  const nav = document.querySelector("#reportsNav");
+  if (nav) nav.innerHTML = "<a href='" + D.reports_url + "'>历史政策通报归档 →</a>";
+}
 renderFeatures(); renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
 
 // 公开静态版（没有本地语料库）: 说明一句, 免得读者以为是页面出错

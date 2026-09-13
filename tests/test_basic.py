@@ -373,10 +373,15 @@ def test_report_time_grouping():
     assert [k for k, _ in groups] == ["2024", "2025"]  # 按时间正序
     assert period_key("2025-03-05", "year") == "2025"
 
-    md = build_markdown(rows, title="回顾", group_by="time", bucket="year")
+    # 口语速览版(plain)保留原来的分时段结构
+    md = build_markdown(rows, title="回顾", group_by="time", bucket="year", style="plain")
     assert "热词演变" in md and "分年回顾" in md
-    html = build_html(rows, title="回顾", group_by="time", bucket="year")
+    html = build_html(rows, title="回顾", group_by="time", bucket="year", style="plain")
     assert "trend" in html and "分年回顾" in html
+    # 公文版(formal, 默认): 编制说明 + 分章编号
+    fm = build_markdown(rows, title="回顾", group_by="time", bucket="year")
+    assert "**编制时间**" in fm and "重点政策与市场动态" in fm
+    assert "数据来源与口径说明" in fm and "**（四）免责声明**" in fm
 
 
 def test_keyword_substring_not_double_counted():
@@ -509,10 +514,13 @@ def test_insight_render_and_report_section():
     brief = render_brief(it, rows)
     assert "公募" in brief and "未来可能的动作" in brief
 
-    md = build_markdown(rows, title="回顾", insights=[it])
+    md = build_markdown(rows, title="回顾", insights=[it], style="plain")
     assert "专题洞察与展望" in md and "证监发〔2025〕21号" in md
-    html = build_html(rows, title="回顾", insights=[it])
+    html = build_html(rows, title="回顾", insights=[it], style="plain")
     assert "专题洞察与展望" in html and "<li>" in html
+    # 公文版把专题放进「专题分析」章
+    fm = build_markdown(rows, title="回顾", insights=[it])
+    assert "专题分析" in fm
 
 
 # ---------------------------------------------------------------- 名词档案与网页
@@ -953,9 +961,12 @@ def test_report_includes_media_and_external_sections():
          "pub_date": "2026-09-12", "policy_score": 0, "tags": [], "hotwords": [], "url": "e1",
          "source": "google_news", "source_name": "Google News（海外媒体）", "doc_no": ""},
     ]
-    md = build_markdown(rows, title="日报", view_rows=view_rows)
+    md = build_markdown(rows, title="日报", view_rows=view_rows, style="plain")
     assert "媒体视角" in md and "新华社·金融" in md
     assert "外部视角" in md and "Google News" in md
+    # 公文版同样要带这两节
+    fm = build_markdown(rows, title="通报", view_rows=view_rows)
+    assert "权威媒体报道" in fm and "海外机构与媒体解读" in fm and "Google News" in fm
 
 
 # ---------------------------------------------------------------- 海外条目的中文翻译
@@ -1042,3 +1053,84 @@ def test_report_external_translation(tmp_path, monkeypatch):
     ]
     md = build_markdown(rows, title="日报", view_rows=view_rows, translate="mymemory")
     assert "央行预计将中间价设在 6.7174" in md
+
+
+# ---------------------------------------------------------------- 公文文风与报告归档
+
+def test_formal_report_style():
+    """公文版: 编制说明 + 分章编号 + 口径说明; 口语版保留分板块结构."""
+    from finradar.analysis.report import build_html, build_markdown
+
+    rows = [
+        {"title": "关于印发《关于加快农业保险高质量发展的实施方案》的通知",
+         "summary": "为贯彻落实党中央、国务院决策部署，推动农业保险高质量发展。",
+         "pub_date": "2026-09-11", "policy_score": 85.0, "tags": ["主题热词"],
+         "hotwords": ["高质量发展"], "url": "https://gov.cn/a", "doc_no": "财金〔2026〕88号",
+         "source_name": "中国政府网·政策文件库",
+         "impact": "财政补贴与保费补贴联动 → 扩大农业保险覆盖面 → 利好财险公司农险业务"},
+    ]
+    md = build_markdown(rows, title="金融政策动态通报")
+    assert md.startswith("# 金融政策动态通报")
+    assert "**编制时间**" in md and "**统计区间**" in md and "**样本数量**" in md
+    assert "2026年9月11日" in md, "日期要写成公文格式"
+    assert "一、政策热词情况" in md and "二、重点政策与市场动态" in md
+    assert "主要内容：" in md and "政策传导路径：" in md
+    assert "**（四）免责声明**" in md
+    # 公文版不再出现口语化小标题
+    assert "怎么用这份日报准备面试" not in md
+
+    html = build_html(rows, title="金融政策动态通报")
+    assert "doc-title" in html and "内部学习参考资料" in html
+    assert "<table>" in html and "<h2>" in html
+
+
+def test_plain_style_still_available():
+    from finradar.analysis.report import build_markdown
+
+    rows = [
+        {"title": "央行开展逆回购", "summary": "维护流动性", "pub_date": "2026-09-13",
+         "policy_score": 70.0, "tags": ["货币政策"], "hotwords": ["逆回购"],
+         "url": "u", "source_name": "中国人民银行", "doc_no": ""},
+    ]
+    md = build_markdown(rows, title="日报", style="plain")
+    assert "生成时间" in md and "按板块梳理" in md
+    assert "怎么用这份日报准备面试" in md
+
+
+def test_publish_writes_archive_and_index(tmp_path):
+    """finradar publish: 报告归档到目录 + 生成索引页 + 保留最近 N 期."""
+    import shutil
+    from pathlib import Path
+
+    from finradar.analysis.report import write_report, write_report_index
+
+    rows = [
+        {"title": "关于印发管理办法的通知", "summary": "内容", "pub_date": "2026-09-11",
+         "policy_score": 80.0, "tags": ["政策动作"], "hotwords": [], "url": "u1",
+         "source_name": "政府网", "doc_no": "国办发〔2026〕1号"},
+    ]
+    dest = Path(tmp_path) / "docs" / "reports"
+    paths = write_report(rows, title="金融政策动态通报", stem="report_20260911",
+                         style="formal", translate="none")
+    dest.mkdir(parents=True, exist_ok=True)
+    for p in paths.values():
+        shutil.copy2(p, dest / Path(p).name)
+    # 再放两期假的, 验证索引排序与保留
+    for d in ("report_20260910", "report_20260909"):
+        (dest / f"{d}.html").write_text("<html>old</html>", encoding="utf-8")
+
+    idx = write_report_index(dest)
+    text = idx.read_text(encoding="utf-8")
+    assert "2026年9月11日" in text and "report_20260911.html" in text
+    assert "3 期" in text
+    # 最新一期在前
+    assert text.index("2026年9月11日") < text.index("2026年9月10日")
+
+
+def test_publish_command_registered():
+    from finradar.cli import build_parser
+
+    p = build_parser()
+    a = p.parse_args(["publish"])
+    assert a.func.__name__ == "cmd_publish"
+    assert a.style == "formal" and a.keep == 30 and a.push is False

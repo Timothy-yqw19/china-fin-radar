@@ -38,6 +38,7 @@
 | 页面 | 内容 |
 |---|---|
 | `index.html` | 专题报道（8 篇）+ 洞察速查 + 名词档案（52 条）+ 候选新词 |
+| `docs/reports/` | **政策通报归档**（`finradar publish` 生成，按日期倒序，公文体） |
 | `kb.html` | 词库刷题页（52 词 / 62 题，进度存本机） |
 | `docs/` | 考点手册等 Markdown |
 
@@ -300,7 +301,7 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   196 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   200 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -309,7 +310,7 @@ tests/                   196 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 196 passed
+pytest -q            # 200 passed
 ruff check .
 ```
 
