@@ -22,7 +22,7 @@
 | 知道"五篇大文章""中长期资金入市"这些词，但一被追问就露怯 | 每个词条含**考点清单 + 面试口语化答法 + 追问及应答**，不是词典释义 |
 | 背了一堆，面试时组织不出语言 | 所有答案都写成**能直接说出口的口语**，控制在 60–90 秒 |
 | 想在面试里说清"这几年金融政策有什么变化"，却没有时间线 | `finradar backfill` 回捞 2021 年以来**政策文件**，`hot --window 5y --trend` 给出**词 × 年演变矩阵**（哪个词哪年出现、哪年升温、被谁替代） |
-| 只看到一条条新闻，串不成"这条路怎么走到今天、接下来会怎样" | **专题洞察**：每条主线给足脉络（人工 + 从库里自动聚合）+ 现状快照 + **各主体（监管/公募/券商/银行/保险/外资）可能的动作（带触发条件）** + 该盯哪些信号；做成网页版可手机翻 |
+| 只看到一条条新闻，串不成"这条路怎么走到今天、接下来会怎样" | **专题报道 + 专题洞察**：每条主线给足脉络（人工 + 从库里自动聚合）+ 现状快照 + **各主体（监管/公募/券商/银行/保险/外资）可能的动作（带触发条件）** + 该盯哪些信号；做成网页版可手机翻（报道是成篇文章，洞察是条目速查） |
 | 名词记不住、也不知道哪些词值得背 | **名词档案**：46 个热词全部自动生成档案（定义/考点/答法 + 语料里出现多少次、首见哪一年、代表文件），另有**候选新词**从过去几年的政策文件里挖出来待你确认 |
 
 ---
@@ -61,7 +61,13 @@ finradar rescore
 # 查一个词的完整解析
 finradar term QDII
 
-# 专题洞察：这条线怎么走到今天、各方接下来可能做什么
+# 专题报道：成篇的文章（导语 + 脉络 + 各方动作 + 反方观点）
+finradar features                           # 6 篇报道的标题与导语
+finradar feature QDII                       # 读一篇
+finradar features --out output/features.md  # 全部合并导出成 Markdown
+finradar feature QDII --html                # 导出成网页
+
+# 专题洞察（条目式速查）：这条线怎么走到今天、各方接下来可能做什么
 finradar insights
 finradar insight QDII
 finradar report --window 1y --insights      # 报告末尾附上相关专题
@@ -225,6 +231,7 @@ finradar/
 │   ├── tagger.py        政策打分、标签、传导逻辑
 │   ├── hotwords.py      热词统计、演变矩阵、新词发现
 │   ├── insights.py      专题与语料的融合（自动脉络 / 最新动态 / 精简版渲染）
+│   ├── features.py      专题报道（成篇文章 + 自动织入的数据支撑段）
 │   ├── dossiers.py      名词档案与候选新词挖掘
 │   ├── insight_site.py  专题网页的数据组装与渲染
 │   └── report.py        日报（Markdown + 单文件 HTML）+ 跨源重复合并
@@ -248,11 +255,11 @@ docs/
 └── 金融热词演变分析.md     热词演变的手写分析
 web/
 ├── template.html        词库/刷题网页模板
-└── insights_template.html  专题洞察网页模板（样式复用前者）
+└── insights_template.html  洞察网页模板（专题报道 / 洞察速查 / 名词档案 / 候选新词）
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   165 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   170 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -261,7 +268,7 @@ tests/                   165 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 165 passed
+pytest -q            # 170 passed
 ruff check .
 ```
 

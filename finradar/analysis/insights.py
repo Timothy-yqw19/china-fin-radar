@@ -43,10 +43,12 @@ def related_rows(
         if float(r.get("policy_score") or 0) < min_score:
             continue
         t = _text(r)
-        n = sum(1 for k in keys if k in t)
+        matched = [k for k in keys if k in t]
+        n = len(matched)
         if n >= min_hits:
             rr = dict(r)
             rr["_hits"] = n
+            rr["_matched"] = matched
             out.append(rr)
     return out
 

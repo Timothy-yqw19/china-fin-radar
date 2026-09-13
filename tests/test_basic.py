@@ -585,3 +585,93 @@ def test_insight_site_payload_and_render():
     assert "金融政策洞察" in html and "未来可能的动作" in html
     assert it.topic in html
     assert "var(--seal)" in html or "--seal" in html  # 样式被注入
+
+
+# ---------------------------------------------------------------- 专题报道（成篇）
+
+def test_all_insights_have_feature_article():
+    """每个专题都要有成篇报道: 导语 + 至少 4 个段落, 且正文够长(不是条目堆)。"""
+    from finradar.knowledge import insights as I
+
+    for it in I.load_insights():
+        feat = it.feature or {}
+        assert feat.get("lead"), f"{it.id} 没有导语"
+        secs = feat.get("sections") or []
+        assert len(secs) >= 4, f"{it.id} 报道段落太少: {len(secs)}"
+        for s in secs:
+            assert s.get("title") and s.get("body"), f"{it.id} 段落缺标题或正文"
+        body = "".join(s.get("body", "") for s in secs)
+        assert len(body) >= 600, f"{it.id} 正文太短({len(body)} 字)，还是条目不是报道"
+        # 展望类段落必须出现"各方"的主体视角, 而不是只有结论
+        blob = body + (feat.get("lead") or "")
+        assert any(a in blob for a in ("监管", "公募", "券商", "银行", "保险")), (
+            f"{it.id} 报道里没有分主体的动作描述"
+        )
+
+
+def test_feature_render_markdown_and_html():
+    from finradar.analysis.features import build_feature, render_feature_html, render_feature_markdown
+    from finradar.knowledge import insights as I
+
+    it = I.get("QDII")
+    qdii_rows = [
+        {"title": "内地与香港利率互换市场互联互通合作管理暂行办法", "summary": "",
+         "pub_date": "2023-04-29", "policy_score": 72, "url": "https://gov.cn/x",
+         "doc_no": "中国人民银行公告〔2023〕第8号", "source_name": "政府网"},
+        {"title": "关于延续实施沪港、深港股票市场交易互联互通机制的通知", "summary": "",
+         "pub_date": "2023-08-26", "policy_score": 68, "url": "https://gov.cn/y",
+         "doc_no": "财政部公告〔2023〕第x号", "source_name": "政府网"},
+    ]
+    art = build_feature(it, qdii_rows, min_score=30)
+    assert art["has_feature"] and art["sections"]
+
+    md = render_feature_markdown(art)
+    assert md.startswith(f"# {it.topic}")
+    for sec in art["sections"]:
+        assert f"## {sec['title']}" in md
+    assert "## 数据支撑" in md and "## 主要文件（供核对）" in md
+
+    html = render_feature_html(art)
+    assert "<article class='feature'" in html and "<h3>" in html
+
+
+def test_feature_data_paragraph_uses_corpus():
+    """数据支撑段要用真实语料说话: 条数、年份、最近一份正式文件。"""
+    from finradar.analysis.features import build_feature
+    from finradar.knowledge import insights as I
+
+    it = I.get("tech-finance-aic-bond")
+    rows = _rows_fixture() + [
+        {"title": "国家金融监督管理总局办公厅关于进一步扩大金融资产投资公司股权投资试点的通知",
+         "summary": "", "pub_date": "2025-03-05", "policy_score": 82,
+         "url": "https://gov.cn/e", "doc_no": "金办发〔2025〕19号", "source_name": "金融监管总局"},
+    ]
+    art = build_feature(it, rows, min_score=30)
+    para = art["data_paragraph"]
+    assert "涉及这条线的有" in para and "2025" in para
+    assert "金办发〔2025〕19号" in para or "金融资产投资公司" in para
+    # 没有语料时不应编造段落
+    assert build_feature(it, [], min_score=30)["data_paragraph"] == ""
+
+
+def test_feature_without_article_falls_back_to_thesis():
+    """还没写正文的专题: 渲染要退回核心判断并给出提示, 而不是空白页。"""
+    from finradar.analysis.features import build_feature, render_feature_markdown
+    from finradar.models import Insight
+
+    it = Insight(id="x", topic="示例专题", thesis="这是一句核心判断。")
+    art = build_feature(it, [])
+    assert art["has_feature"] is False
+    md = render_feature_markdown(art)
+    assert "这是一句核心判断。" in md
+    assert "feature.sections" in md  # 提示怎么补正文
+
+
+def test_site_payload_includes_features():
+    from finradar.analysis.insight_site import build_payload
+    from finradar.knowledge import insights as I
+
+    payload = build_payload(_rows_fixture(), insights=[I.get("QDII")], terms=[], candidates=False)
+    assert len(payload["features"]) == 1
+    art = payload["features"][0]
+    assert art["lead"] and art["sections"] and "data_paragraph" in art

@@ -43,6 +43,14 @@ __STYLE__
 .kv dt{color:var(--muted);font-size:12.5px;padding-top:2px}
 .kv dd{margin:0}
 .quote{border-left:2px solid var(--jade);padding-left:10px;color:var(--ink-2);font-size:14px}
+/* ---- 专题报道 ---- */
+.feature{border-top:1px solid var(--rule);padding:26px 0 8px;max-width:46em}
+.feature:first-of-type{border-top:none;padding-top:6px}
+.feature h2{margin:0 0 6px;font-size:23px;line-height:1.35}
+.feature .fmeta{color:var(--muted);font-size:12.5px;letter-spacing:.02em;margin-bottom:10px}
+.feature .lead{font-size:16px;line-height:1.85;color:var(--ink);font-weight:500}
+.feature p{font-size:15px;line-height:1.9;color:var(--ink-2);margin:10px 0}
+.feature h3{margin:22px 0 6px;font-size:14px;letter-spacing:.06em;color:var(--seal)}
 </style>
 
 <header class="masthead">
@@ -62,14 +70,27 @@ __STYLE__
     </div>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" aria-selected="true" data-view="ins">专题洞察</button>
+    <button class="tab" role="tab" aria-selected="true" data-view="feat">专题报道</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="ins">洞察速查</button>
     <button class="tab" role="tab" aria-selected="false" data-view="terms">名词档案</button>
     <button class="tab" role="tab" aria-selected="false" data-view="cand">候选新词</button>
   </nav>
 </header>
 
 <main class="wrap">
-  <section class="panel" id="v-ins" role="tabpanel">
+  <section class="panel" id="v-feat" role="tabpanel">
+    <div class="note">
+      <b>成篇的专题报道</b>：导语 + 来龙去脉 + 各方可能的动作 + 反方观点，读下来能讲给面试官听。
+      数据支撑段由脚本从你抓到的语料实时生成。想要条目式的速查版，看「洞察速查」标签页。
+    </div>
+    <div class="filters">
+      <input class="search" id="qFeat" type="search" placeholder="搜索报道标题、正文…" aria-label="搜索报道">
+      <div class="fgroup" id="fFeatNav"></div>
+    </div>
+    <div id="featList"></div>
+  </section>
+
+  <section class="panel" id="v-ins" role="tabpanel" hidden>
     <div class="filters">
       <input class="search" id="qIns" type="search" placeholder="搜索专题、判断、关键词…" aria-label="搜索专题">
       <div class="fgroup" id="fActor"><span class="flabel">主体</span></div>
@@ -115,6 +136,28 @@ function docLine(d){
   const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>` : t;
   const meta = [d.date, d.source, d.doc_no, d.score?("政策分 "+d.score):""].filter(Boolean).join(" · ");
   return `<li>${link}<div class="m">${esc(meta)}</div></li>`;
+}
+
+function paras(text){
+  return String(text||"").split("\n").filter(x=>x.trim())
+    .map(x=>`<p>${esc(x.trim())}</p>`).join("");
+}
+
+function renderFeatures(){
+  q("#featList").innerHTML = (D.features||[]).map((f, i) => {
+    const secs = (f.sections||[]).map(s=>`<h3>${esc(s.title)}</h3>${paras(s.body)}`).join("");
+    const docs = (f.latest||[]).slice(0,6).map(docLine).join("");
+    return `<article class="feature" id="feat-${i}"
+        data-blob="${esc([f.topic,f.lead,(f.sections||[]).map(s=>s.body).join(" ")].join(" "))}">
+      <h2>${esc(f.topic)}</h2>
+      <div class="fmeta">${esc(f.category||"")}${f.actors&&f.actors.length
+        ? " · 涉及主体：" + esc(f.actors.join(" / ")) : ""}</div>
+      <p class="lead">${esc(f.lead || f.thesis || "")}</p>
+      ${f.data_paragraph ? `<h3>数据支撑</h3><p>${esc(f.data_paragraph)}</p>` : ""}
+      ${secs}
+      ${docs ? `<h3>主要文件（供核对）</h3><ul class="docs">${docs}</ul>` : ""}
+    </article>`;
+  }).join("") || "<p class='note'>还没有写正文的专题报道。</p>";
 }
 
 function renderInsights(){
@@ -253,8 +296,21 @@ function initFilters(){
   };
 
   q("#qIns").oninput = () => applySearch("#v-ins", "#qIns", ".card");
+  q("#qFeat").oninput = () => applySearch("#v-feat", "#qFeat", ".feature");
   q("#qTerm").oninput = () => applySearch("#v-terms", "#qTerm", ".card");
   q("#qCand").oninput = () => applySearch("#v-cand", "#qCand", ".cand");
+
+  // 报道页目录: 点一下跳到那篇
+  const nav = q("#fFeatNav");
+  (D.features || []).forEach((f, i) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = String(f.topic || "").split("：")[0].slice(0, 12);
+    b.onclick = () => {
+      const el = document.getElementById("feat-" + i);
+      if (el && el.scrollIntoView) el.scrollIntoView({behavior: "smooth", block: "start"});
+    };
+    nav.appendChild(b);
+  });
 }
 
 function initTabs(){
@@ -262,16 +318,17 @@ function initTabs(){
     t.onclick = () => {
       document.querySelectorAll(".tab").forEach(x=>x.setAttribute("aria-selected","false"));
       t.setAttribute("aria-selected","true");
-      ["ins","terms","cand"].forEach(v=>{
+      ["feat","ins","terms","cand"].forEach(v=>{
         q("#v-"+v).hidden = (v !== t.dataset.view);
       });
       location.hash = t.dataset.view;
     };
   });
   const h = (location.hash||"").replace("#","");
-  if (["ins","terms","cand"].includes(h)) document.querySelector(`.tab[data-view="${h}"]`).click();
+  if (["feat","ins","terms","cand"].includes(h)) document.querySelector(`.tab[data-view="${h}"]`).click();
   // 单条专题页里没有候选词/名词档案时, 把空标签页隐藏掉
-  const counts = {ins: D.insights.length, terms: D.terms.length, cand: D.candidates.length};
+  const counts = {feat: (D.features||[]).length, ins: D.insights.length,
+                  terms: D.terms.length, cand: D.candidates.length};
   document.querySelectorAll(".tab").forEach(t => {
     if (!counts[t.dataset.view]) t.style.display = "none";
   });
@@ -283,6 +340,6 @@ q("#nCand").textContent = D.candidates.length;
 q("#nNews").textContent = num(D.n_news);
 q("#cover").textContent = D.coverage || "—";
 q("#gen").textContent = D.generated || "—";
-renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
+renderFeatures(); renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
 })();
 </script>

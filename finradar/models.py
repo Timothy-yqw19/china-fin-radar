@@ -131,6 +131,9 @@ class Insight:
     snapshot: list[dict] = field(default_factory=list)  # [{label, value, as_of}]
     outlook: list[dict] = field(default_factory=list)  # [{actor, action, trigger, horizon}]
     watchlist: list[str] = field(default_factory=list)  # 观察指标/信号
+    # 成篇的专题报道: {lead: 导语, sections: [{title, body}]} —— 正文是散文,
+    # 渲染时会在导语后自动织入一段"数据支撑"(来自库内真实语料)
+    feature: dict = field(default_factory=dict)
     interview_take: str = ""  # 60-90 秒口语化
     related_terms: list[str] = field(default_factory=list)  # 关联的热词
 

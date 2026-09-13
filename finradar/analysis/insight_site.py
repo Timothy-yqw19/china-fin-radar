@@ -13,6 +13,7 @@ from ..knowledge import glossary as G
 from ..knowledge import insights as I
 from ..utils import ROOT_DIR, now_cn
 from .dossiers import mine_candidates, term_dossiers
+from .features import build_feature
 from .insights import corpus_timeline
 
 TEMPLATE = ROOT_DIR / "web" / "insights_template.html"
@@ -47,6 +48,7 @@ def build_payload(
     insights=None,  # noqa: ANN001
     terms=None,  # noqa: ANN001
     candidates: bool = True,
+    features: bool = True,
     min_score: float = 30.0,
 ) -> dict:
     """组装网页数据. insights/terms 传 None 表示全部, 传 [] 表示不要这一段."""
@@ -71,6 +73,12 @@ def build_payload(
         "n_news": len(rows),
         "coverage": f"{date_sorted[0]} ~ {date_sorted[-1]}" if date_sorted else "",
         "insights": ins_payload,
+        # 成篇报道: 只带上写了正文的
+        "features": (
+            [_clean(build_feature(it, rows, min_score=min_score)) for it in insights if it.feature]
+            if features
+            else []
+        ),
         "terms": _clean(term_dossiers(terms, rows, insights)),
         "candidates": (
             _clean(

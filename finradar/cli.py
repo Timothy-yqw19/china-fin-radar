@@ -254,6 +254,89 @@ def cmd_stats(a: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------- 热词
 
+def cmd_features(a: argparse.Namespace) -> int:
+    """列出已经有成篇报道的专题."""
+    from .analysis.features import build_feature
+    from .knowledge import insights as I
+
+    items = [it for it in I.load_insights() if it.feature]
+    if not items:
+        print("还没有写正文的专题。在 finradar/data/insights/*.yaml 里补 feature.lead 与 feature.sections。")
+        return 1
+    print(f"共 {len(items)} 篇专题报道（看全文： finradar feature <专题名>）\n")
+    for it in items:
+        art = build_feature(it)
+        print(f"■ {art['topic']}")
+        print(f"   {art['lead'][:80]}…")
+        print(f"   段落: {' / '.join(s.get('title','') for s in art['sections'])}")
+        print()
+    if a.out:
+        return cmd_feature_bundle(a)
+    return 0
+
+
+def cmd_feature_bundle(a: argparse.Namespace) -> int:
+    """把全部报道合并导出成一个 Markdown 文件."""
+    from .analysis.features import build_feature, render_feature_markdown
+    from .knowledge import insights as I
+
+    rows = Store(a.db).query(limit=10**6)
+    parts = [f"# 金融政策专题报道（{len([i for i in I.load_insights() if i.feature])} 篇）", ""]
+    for it in I.load_insights():
+        if not it.feature:
+            continue
+        parts.append(render_feature_markdown(build_feature(it, rows, min_score=a.min_score)))
+        parts.append("\n---\n")
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(parts), encoding="utf-8")
+    print(f"已导出 {out}")
+    return 0
+
+
+def cmd_feature(a: argparse.Namespace) -> int:
+    """输出一篇成篇的专题报道（Markdown，或导出网页）."""
+    from .analysis.features import build_feature, render_feature_markdown
+    from .knowledge import insights as I
+
+    it = I.get(a.name)
+    if not it:
+        print(f"没找到「{a.name}」。用 finradar insights 看全部专题。")
+        return 1
+    if not it.feature:
+        print(f"「{it.topic}」还没有写正文。结构化版本用 finradar insight {a.name}")
+        return 1
+    store = Store(a.db)
+    # 报道要看整条线, 默认不设窗口; 只有显式给了 --window/--days 才收窄
+    since = resolve_window(a.window, a.days)[0] if (a.window or a.days) else None
+    rows = store.query(since=since, min_score=a.min_score, limit=10**6)
+    art = build_feature(it, rows, min_score=max(30.0, a.min_score))
+    if a.html:
+        from .analysis.insight_site import build_payload, render_site
+        from .knowledge import glossary as _G
+
+        related = set(it.related_terms)
+        terms = [t for t in _G.load_glossary() if t.term in related]
+        payload = build_payload(
+            store.query(limit=10**6), insights=[it], terms=terms,
+            candidates=False, features=True, min_score=max(30.0, a.min_score),
+        )
+        out = Path(a.out or (workdir() / "features" / f"{it.id}.html"))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(render_site(payload), encoding="utf-8")
+        print(f"已生成 {out}")
+        return 0
+    text = render_feature_markdown(art)
+    if a.out:
+        out = Path(a.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        print(f"已写出 {out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_insights(a: argparse.Namespace) -> int:
     """列出所有专题洞察."""
     from .knowledge import insights as I
@@ -285,7 +368,8 @@ def cmd_insight(a: argparse.Namespace) -> int:
     rows: list[dict] = []
     if not a.no_news:
         store = Store(a.db)
-        since, _, _ = resolve_window(a.window, a.days)
+        # 专题要看整条线, 默认不设窗口
+        since = resolve_window(a.window, a.days)[0] if (a.window or a.days) else None
         rows = store.query(since=since, min_score=a.min_score, limit=200000)
     if a.html:
         # 单条专题也出一个网页(含它的关联热词档案), 方便发给别人或手机上翻
@@ -552,7 +636,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-q", "--query", default="", help="按关键词筛选")
     s.add_argument("--actor", default=None, help="按主体筛选，如 公募 / 券商 / 银行 / 监管")
     s.add_argument("--category", default=None, help="按分类筛选")
+    s.add_argument("--out", default=None, help="同时把全部报道合并导出成 Markdown 文件")
     s.set_defaults(func=cmd_insights)
+
+    s = sub.add_parser("features", help="列出已写好的专题报道")
+    s.add_argument("--out", default=None, help="合并导出成 Markdown 文件")
+    s.add_argument("--min-score", type=float, default=30.0, help="关联文件的最低政策分")
+    s.add_argument("--db", default=None)
+    s.set_defaults(func=cmd_features)
+
+    s = sub.add_parser("feature", help="读一篇成篇的专题报道")
+    s.add_argument("name", help="专题名或关键词，如 QDII / 公募 / 息差")
+    s.add_argument("--window", default=None, help="关联数据的时间窗口（默认全部）")
+    s.add_argument("--days", type=int, default=None)
+    s.add_argument("--min-score", type=float, default=0.0)
+    s.add_argument("--html", action="store_true", help="导出成网页（含关联名词档案）")
+    s.add_argument("--out", default=None, help="输出路径")
+    s.set_defaults(func=cmd_feature)
 
     s = sub.add_parser("insight", help="查看某个专题的完整洞察与展望")
     s.add_argument("name", help="专题名或关键词，如 QDII / 公募 / 息差")
