@@ -8,13 +8,18 @@ import yaml
 
 from ..utils import CONFIG_DIR, LOG
 from .base import BaseCrawler, get_crawler, register, registry  # noqa: F401
-from . import official, flash, ak_source  # noqa: F401,E402
+from . import official, flash, ak_source, trends  # noqa: F401,E402
 from .official import ConfigListCrawler  # noqa: E402
 
-__all__ = ["BaseCrawler", "get_crawler", "register", "registry", "build_all", "OFFICIAL", "FLASH"]
+__all__ = [
+    "BaseCrawler", "get_crawler", "register", "registry", "build_all",
+    "OFFICIAL", "FLASH", "TRENDS",
+]
 
 OFFICIAL = ["gov", "pbc", "csrc", "nfra", "safe"]
 FLASH = ["em_flash", "em_breakfast", "cls", "ths_flash", "sina_flash"]
+# 大众热榜: 噪音大, 默认不抓, 用 --source trends 或 --source all
+TRENDS = ["toutiao_hot", "douyin_hot", "baidu_hot"]
 
 
 @functools.lru_cache(maxsize=1)
@@ -59,6 +64,8 @@ def build_all(only: list[str] | None = None, pages: int = 1, fetcher=None):  # n
                 ids += OFFICIAL
             elif name == "flash":
                 ids += FLASH
+            elif name == "trends":
+                ids += TRENDS
             elif name in reg:
                 ids.append(name)
     seen, ordered = set(), []

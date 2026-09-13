@@ -86,7 +86,7 @@ def build_payload(
                     rows,
                     glossary_names=[t.term for t in G.load_glossary()],
                     insight_keywords=[k for i in I.load_insights() for k in i.keywords],
-                    top=40,
+                    top=120,
                     min_count=3,
                 )
             )

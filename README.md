@@ -55,6 +55,12 @@ finradar report --window 1y --min-score 70 # 近一年的政策回顾
 # 近 30 天热词榜 + 新词发现
 finradar hot --days 30 --discover
 
+# 扩大词表：大众热榜（头条/抖音/百度）+ 批量挖掘候选提法
+finradar crawl --source trends
+finradar trends                          # 热榜里今天有哪些财经话题在火
+finradar mine --top 200 --trends         # 从全部语料里挖候选提法
+finradar mine --top 200 --out output/drafts/terms_draft.yaml
+
 # 改了 config/keywords.yaml 之后，不用重抓，直接把库里已有条目重算一遍
 finradar rescore
 
@@ -102,6 +108,8 @@ finradar facts --keys lpr money_supply cpi
 | 官方政策 | 国家外汇管理局 | HTML | 政策法规 / 外汇新闻 / 要闻发布，QDII 额度表在这里 |
 | 官方政策（配置化） | 财政部 / 发改委 / 国家统计局 / 基金业协会 | HTML + `config/sources.yaml` | 加站点只填 selector，不用写代码 |
 | 快讯 | 东方财富 7×24 / 财经早餐 | JSON | |
+| 快讯 | 证券时报 | HTML + 配置化 | 实时快讯，补市场层面的新闻 |
+| 大众热榜 | 今日头条 / 抖音 / 百度 | JSON | 看大众在关心什么；默认不参与政策统计（`--include-trends` 打开） |
 | 快讯 | 财联社电报 | JSON（含 A/B 重点标记，自动提分） | |
 | 快讯 | 同花顺 / 新浪 7×24 | JSON | |
 | 兜底 + 宏观 | AkShare | Python 包 | 直连失败时的第二条腿；LPR/M2/CPI/社融等宏观数据的来源 |
@@ -225,6 +233,7 @@ finradar/
 ├── crawlers/
 │   ├── official.py      政府网 / 证监会 / 金融监管总局 / 央行 / 外汇局
 │   ├── flash.py         东方财富 / 财联社 / 同花顺 / 新浪
+│   ├── trends.py        今日头条 / 抖音 / 百度 热榜
 │   └── ak_source.py     AkShare 兜底通道 + 宏观数据（含"取最新一期"的排序修正）
 ├── analysis/
 │   ├── periods.py       时间窗口(3m/6m/1y/3y/5y)与统计周期(周/月/季/年)
@@ -259,7 +268,7 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   170 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   174 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -268,7 +277,7 @@ tests/                   170 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 170 passed
+pytest -q            # 174 passed
 ruff check .
 ```
 

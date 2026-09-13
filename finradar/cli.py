@@ -25,7 +25,7 @@ from .analysis import (
     annotate, auto_bucket, combined_hotwords, dedupe_rows, discover_new_words,
     render_trend, resolve_window, write_report,
 )
-from .crawlers import build_all, config_source_ids, registry
+from .crawlers import TRENDS, build_all, config_source_ids, registry
 from .knowledge import glossary as G
 from .knowledge import qbank as Q
 from .knowledge import quiz as QZ
@@ -205,7 +205,8 @@ def cmd_report(a: argparse.Namespace) -> int:
     if bucket == "auto":
         bucket = auto_bucket(span)
     rows = store.query(
-        since=since, min_score=a.min_score, keyword=a.keyword, limit=a.limit
+        since=since, min_score=a.min_score, keyword=a.keyword, limit=a.limit,
+        exclude_sources=None if a.include_trends else TRENDS,
     )
     if not rows:
         print(f"库里没有符合条件的 {label} 数据，先跑 `finradar crawl`（历史窗口需要 `finradar backfill`）。")
@@ -253,6 +254,129 @@ def cmd_stats(a: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- 热词
+
+def cmd_mine(a: argparse.Namespace) -> int:
+    """从语料里批量挖"词库还没有"的提法, 可选导出成词条草稿.
+
+    规模化的关键不是放宽过滤, 而是**语料要够大**: 政策文件库回捞到 2021 年、
+    加上证券时报这类财经媒体, 一次能挖出几百个候选; 再加 --trends 把
+    大众热榜(头条/抖音/百度)里今天的财经话题一并列出来。
+    """
+    import yaml as _yaml
+
+    from .analysis.dossiers import mine_candidates
+    from .analysis.trends import finance_topics
+    from .knowledge import insights as I
+    from .utils import days_ago
+
+    store = Store(a.db)
+    rows = store.query(
+        limit=10**6,
+        exclude_sources=None if a.include_trends else TRENDS,
+    )
+    terms = G.load_glossary()
+    cands = mine_candidates(
+        rows,
+        glossary_names=[t.term for t in terms],
+        insight_keywords=[k for i in I.load_insights() for k in i.keywords],
+        top=a.top,
+        min_count=a.min_count,
+        min_score=a.min_score,
+        max_df_ratio=a.max_df_ratio,
+    )
+    print(f"=== 候选提法（语料 {len(rows):,} 条，挖出 {len(cands)} 个）===")
+    print(f"{'#':>3} {'候选':<20}{'次数':>5} {'首见':>6}  最近三年")
+    for i, c in enumerate(cands, 1):
+        trend = "/".join(f"{y['year']}:{y['n']}" for y in c["by_year"][-3:])
+        print(f"{i:>3} {c['word']:<20}{c['n']:>5} {c['first_year']:>6}  {trend}")
+
+    # 大众热榜里的财经话题（另一个视角：政策提法 vs 大众说法）
+    hot_topics: list[dict] = []
+    if a.trends:
+        trows = [r for r in store.query(since=days_ago(3), limit=100000)
+                 if (r.get("source") or "") in TRENDS]
+        if trows:
+            hot_topics = finance_topics(trows)[: a.top]
+            print(f"\n=== 热榜财经话题（近 3 天 {len(trows)} 条热榜）===")
+            for i, t in enumerate(hot_topics, 1):
+                hv = f"热度 {t['hot']:,}" if t["hot"] else ""
+                print(f"{i:>3} [{ '、'.join(t['platforms']) }] {t['topic']}  {hv}")
+        else:
+            print("\n（没有热榜数据，先跑 finradar crawl --source trends）")
+
+    if a.out:
+        draft = {
+            "category": "待分类",
+            "terms": [
+                {
+                    "id": f"draft-{i:03d}",
+                    "term": c["word"],
+                    "heat": 3,
+                    "era": c["first_year"],
+                    "source": f"自动挖掘，待补（近三年 {c['by_year'][-3:] if c['by_year'] else []}）",
+                    "definition": "TODO 待补：这个词是什么",
+                    "why_hot": "TODO 待补：为什么现在热",
+                    "exam_points": ["TODO 待补：考点一"],
+                    "interview_answer": "TODO 待补：60-90 秒口语化答法",
+                }
+                for i, c in enumerate(cands, 1)
+            ],
+        }
+        p = Path(a.out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        head = (
+            "# 自动挖掘的候选词草稿 —— 挑有价值的补完字段, 再挪进 finradar/data/glossary/\n"
+            "# 字段要求见 docs/GLOSSARY_SCHEMA.md；pytest -q 会校验字段完整性。\n"
+            "# 挑选建议：优先「近三年才高频出现」的词（老词早就该会了）。\n"
+        )
+        body = _yaml.safe_dump(draft, allow_unicode=True, sort_keys=False)
+        p.write_text(head + body, encoding="utf-8")
+        print(f"\n草稿已写出 {p}（{len(draft['terms'])} 个待补词条）")
+    return 0
+
+
+def cmd_trends(a: argparse.Namespace) -> int:
+    """看大众热榜（头条/抖音/百度）里今天有哪些财经话题在火."""
+    from .analysis.trends import FINANCE_HINTS, finance_topics, hot_value
+    from .crawlers import TRENDS
+
+    store = Store(a.db)
+    since, label, _ = resolve_window(a.window or "1d", a.days)
+    rows = store.query(since=since, limit=10**6)
+    rows = [r for r in rows if (r.get("source") or "") in TRENDS]
+    if not rows:
+        print(
+            f"库里没有 {label} 的热榜数据。先抓一次：\n"
+            "  finradar crawl --source trends\n"
+            "（热榜是实时榜，抓完直接看当天的就行）"
+        )
+        return 1
+    platforms = {}
+    for r in rows:
+        platforms[r.get("source")] = r.get("source_name") or r.get("source")
+
+    fin = [r for r in rows if any(h in (r.get("title") or "") for h in FINANCE_HINTS)]
+    topics = finance_topics(rows, platforms)
+    print(f"\n=== {label} 热榜财经话题（{len(rows)} 条热榜里挑出 {len(fin)} 条）===")
+    if not topics:
+        print("（今天热榜上没有明显的财经话题）")
+    for i, t in enumerate(topics[: a.top], 1):
+        hot = f"热度 {t['hot']:,}" if t["hot"] else ""
+        print(f"{i:>3}. [{ '、'.join(t['platforms']) }] {t['topic']}")
+        if len(t["titles"]) > 1:
+            print("     其他说法：" + " / ".join(t["titles"][1:3]))
+        if hot:
+            print(f"     {hot}")
+
+    if a.all:
+        print("\n=== 全部热榜条目（含娱乐体育，按平台）===")
+        for src in sorted({r["source"] for r in rows}):
+            sub = sorted([r for r in rows if r["source"] == src], key=lambda x: -hot_value(x))
+            print(f"\n-- {platforms.get(src, src)}（{len(sub)} 条）")
+            for r in sub[: a.top]:
+                print(f"   {r['title']}")
+    return 0
+
 
 def cmd_features(a: argparse.Namespace) -> int:
     """列出已经有成篇报道的专题."""
@@ -399,7 +523,10 @@ def cmd_hot(a: argparse.Namespace) -> int:
     store = Store(a.db)
     since, label, span = resolve_window(a.window, a.days)
     bucket = a.bucket if a.bucket != "auto" else auto_bucket(span)
-    rows = store.query(since=since, min_score=a.min_score, limit=200000)
+    rows = store.query(
+        since=since, min_score=a.min_score, limit=200000,
+        exclude_sources=None if a.include_trends else TRENDS,
+    )
     if not rows:
         print(f"库里没有 {label} 的数据，先跑 `finradar crawl`（历史窗口需要 `finradar backfill`）。")
         return 1
@@ -553,7 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = net(sub.add_parser("crawl", help="抓取新闻/政策"))
     s.add_argument(
         "--source", nargs="*", default=["official", "flash"],
-        help="official / flash / config / all，或具体 id: "
+        help="official / flash / trends / config / all，或具体 id: "
         + " ".join([*registry(), *config_source_ids()]),
     )
     s.add_argument("--pages", type=int, default=1)
@@ -585,6 +712,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="附带专题洞察与展望（脉络 / 现状 / 各主体可能的动作）",
     )
     s.add_argument("--insight-top", type=int, default=3, help="最多附几个专题")
+    s.add_argument("--include-trends", action="store_true", help="把大众热榜条目也算进来（默认排除）")
     s.add_argument("--min-score", type=float, default=45.0)
     s.add_argument("--keyword", default=None)
     s.add_argument("--limit", type=int, default=5000)
@@ -630,7 +758,25 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto", help="时段粒度（不指定时按窗口自动选）",
     )
     s.add_argument("--discover", action="store_true", help="发现词库外的新提法")
+    s.add_argument("--include-trends", action="store_true", help="把大众热榜条目也算进来（默认排除）")
     s.set_defaults(func=cmd_hot)
+
+    s = sub.add_parser("trends", help="大众热榜里的财经话题（头条/抖音/百度）")
+    s.add_argument("--window", default="1d", help="时间窗口，默认当天（1d/3d/1w…）")
+    s.add_argument("--days", type=int, default=None)
+    s.add_argument("--top", type=int, default=25)
+    s.add_argument("--all", action="store_true", help="连娱乐体育一起看（按平台列出）")
+    s.set_defaults(func=cmd_trends)
+
+    s = sub.add_parser("mine", help="批量挖掘词库还没有的提法（可导出词条草稿）")
+    s.add_argument("--top", type=int, default=200, help="最多输出多少个候选")
+    s.add_argument("--min-count", type=int, default=3, help="至少出现在几篇里")
+    s.add_argument("--min-score", type=float, default=40.0, help="语料的最低政策分")
+    s.add_argument("--max-df-ratio", type=float, default=0.08, help="频率上限（过滤通用词）")
+    s.add_argument("--trends", action="store_true", help="同时列出热榜里的财经话题")
+    s.add_argument("--include-trends", action="store_true", help="把热榜条目算进语料")
+    s.add_argument("--out", default=None, help="导出词条草稿 YAML 的路径")
+    s.set_defaults(func=cmd_mine)
 
     s = sub.add_parser("insights", help="列出专题洞察（脉络 / 现状 / 未来动作）")
     s.add_argument("-q", "--query", default="", help="按关键词筛选")

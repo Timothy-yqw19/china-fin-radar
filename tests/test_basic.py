@@ -675,3 +675,95 @@ def test_site_payload_includes_features():
     assert len(payload["features"]) == 1
     art = payload["features"][0]
     assert art["lead"] and art["sections"] and "data_paragraph" in art
+
+
+# ---------------------------------------------------------------- 大众热榜与规模化挖掘
+
+def test_finance_topics_filter_and_merge():
+    """热榜九成是娱乐体育, 只留财经话题并跨平台合并."""
+    from finradar.analysis.trends import finance_topics, hot_value, is_finance
+
+    rows = [
+        {"title": "AI巨头按下“IPO暂停键”", "summary": "热度 7827541",
+         "source": "douyin_hot", "source_name": "抖音·热榜", "url": ""},
+        {"title": "某明星演唱会门票售罄", "summary": "热度 9999999",
+         "source": "toutiao_hot", "source_name": "今日头条·热榜", "url": ""},
+        {"title": "外资抢抓三大新机遇", "summary": "热度 87381929",
+         "source": "toutiao_hot", "source_name": "今日头条·热榜", "url": "https://x"},
+        {"title": "楼市新政落地，房贷利率下调", "summary": "热度 5000",
+         "source": "baidu_hot", "source_name": "百度·热搜", "url": ""},
+    ]
+    assert is_finance("楼市新政落地") and not is_finance("某明星演唱会门票售罄")
+    assert hot_value(rows[0]) == 7827541
+
+    topics = finance_topics(rows)
+    words = [t["topic"] for t in topics]
+    assert any("IPO" in w for w in words)
+    assert not any("演唱会" in w for w in words), "娱乐话题不该进来"
+    assert sum(1 for t in topics if "热度" not in t["topic"]) == len(topics)
+
+
+def test_trend_crawlers_parse_json():
+    """三个热榜都是 JSON 接口, 用离线样本验证字段映射."""
+    from finradar.crawlers.trends import BaiduHot, DouyinHot, ToutiaoHot
+
+    class F:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def get_json(self, url, **kw):
+            return self.payload
+
+    tt = ToutiaoHot(fetcher=F({"data": [{"Title": "金砖国家领导人集体合影",
+                                         "HotValue": "106716489",
+                                         "Url": "https://www.toutiao.com/trending/1/"}]})).run()
+    assert tt and tt[0].title.startswith("金砖") and tt[0].source == "toutiao_hot"
+    assert tt[0].summary == "热度 106716489"
+    assert ToutiaoHot.kind == "trend" and ToutiaoHot.base_score == 0.0  # 不参与政策打分
+    assert len(tt[0].published_at) == 19
+
+    dy = DouyinHot(fetcher=F({"data": {"word_list": [{"word": "服贸会14年成绩单亮眼",
+                                                      "hot_value": 11395761}]}})).run()
+    assert dy and dy[0].title.startswith("服贸会")
+
+    bd = BaiduHot(fetcher=F({"data": {"cards": [{"content": [{"content": [
+        {"word": "筑牢金砖合作根基", "url": "https://m.baidu.com/s?word=x"}]}]}]}})).run()
+    assert bd and bd[0].title.startswith("筑牢") and "baidu.com" in bd[0].url
+
+
+def test_trends_excluded_from_query_by_default():
+    """热榜噪音大: 日报/热词统计默认要排除, 但可以显式包含."""
+    import tempfile
+    from pathlib import Path
+
+    from finradar.models import NewsItem
+    from finradar.storage import Store
+
+    with tempfile.TemporaryDirectory() as d:
+        s = Store(Path(d) / "t.db")
+        s.save_news([
+            NewsItem(source="gov", source_name="政府网", title="政策文件"),
+            NewsItem(source="douyin_hot", source_name="抖音·热榜", title="娱乐话题"),
+        ])
+        assert len(s.query()) == 2
+        assert [r["source"] for r in s.query(exclude_sources=["douyin_hot"])] == ["gov"]
+
+
+def test_mine_candidates_rejects_fragments():
+    """规模化挖掘的精度约束: 机构名、公文体裁、动词开头的标题片段都要滤掉."""
+    from finradar.analysis.dossiers import mine_candidates
+
+    rows = [
+        {"title": "关于促进资本市场健康发展的通知", "summary": "", "pub_date": "2024-01-01",
+         "policy_score": 70, "url": "https://x/1", "doc_no": ""},
+        {"title": "商务部关于印发管理办法的通知", "summary": "", "pub_date": "2024-02-01",
+         "policy_score": 70, "url": "https://x/2", "doc_no": ""},
+        {"title": "资本市场深化改革实施方案", "summary": "", "pub_date": "2024-03-01",
+         "policy_score": 70, "url": "https://x/3", "doc_no": ""},
+    ] * 2
+    got = [c["word"] for c in mine_candidates(rows, glossary_names=[], top=40, min_count=2)]
+    for w in got:
+        assert not w.startswith(("促进", "推动", "支持", "深化")), f"动词片段没滤掉: {w}"
+        assert not w.endswith(("管理办法", "实施方案", "的通知")), f"公文体裁没滤掉: {w}"
+        assert not w.endswith(("部", "委", "局", "总局")), f"机构名没滤掉: {w}"
+        assert not any(ch in w for ch in "的了和与"), f"标题片段没滤掉: {w}"

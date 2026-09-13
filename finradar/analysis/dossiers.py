@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from typing import Iterable
 
@@ -41,9 +42,35 @@ STOP_WORDS = {
     "优惠政策", "政策性", "银行业", "保险业", "银行保险", "资产管理", "资本市场",
     "数字化", "企业融资", "绿色低碳", "财政金融", "本办法", "等政策", "性金融",
     "化金融", "税政策", "中央预算内投资", "国家发展改革委等",
+    # 政策文件里高频但太泛的通用语, 做成词条没有信息量
+    "总体规划", "高标准", "税收政策", "市场体系", "银行业保险业", "应用试点",
+    "专项规划", "制度体系", "深化改革", "扩大开放", "新工具", "服务平台",
+    "新政策", "新补贴", "新机制", "宏观政策", "增量政策", "政策协同",
 }
 # 候选的首尾出现这些虚词, 基本是跨词边界拼出来的碎片
 BOUNDARY_CHARS = set("等性化的是本及与和该各有为在对中了的把被或")
+# 跨词碎片常见的"残缺首字": 商业保险→业保险、公募基金→募基金、资金管理→金管理…
+# 这些字几乎不会作为术语的开头, 出现了说明是从词中间切开的
+BROKEN_HEAD_CHARS = set("业金募保关华策理施行务司团企商财产权利率育计构给费票心办")
+# 以这些动词/介词开头的候选基本是标题片段("促进资本市场""运用专项债券"), 不是术语
+VERB_HEAD = (
+    "促进", "推动", "支持", "加快", "鼓励", "运用", "深化", "开展", "加强", "完善",
+    "健全", "优化", "扩大", "建立", "探索", "引导", "培育", "打造", "推进", "建设",
+    "实施", "强化", "坚持", "统筹", "落实", "做好", "进一步", "持续", "着力",
+    "举办", "组织", "召开", "举行",
+)
+# 以这些动词结尾的候选基本是标题片段("开放推动""政策协同"这种反过来的碎片)
+VERB_TAIL = (
+    "推动", "支持", "促进", "加快", "扩大", "深化", "开展", "加强", "完善", "健全",
+    "优化", "建立", "探索", "引导", "培育", "打造", "推进", "落实", "做好", "助力",
+)
+# 公文类型: "…管理办法/…实施方案" 是文件体裁, 不是提法
+DOC_TAIL = (
+    "管理办法", "暂行办法", "实施办法", "管理规定", "实施方案", "行动方案",
+    "工作方案", "总体方案", "试点方案", "发展规划", "规划纲要", "实施细则",
+    "指导意见", "实施意见", "若干措施", "政策措施", "通知", "公告", "办法",
+    "方案", "规定", "细则", "指南", "解读",
+)
 # 只有"像金融政策提法"的候选才值得人工看: 至少含一个领域词
 FINANCE_TOKENS = (
     "金融", "货币", "资本", "债", "股", "险", "银行", "基金", "信贷", "利率", "汇率",
@@ -172,7 +199,19 @@ def mine_candidates(
             return False
         if w.endswith(ORG_SUFFIX) or w in STOP_WORDS or w.endswith(STOP_SUFFIX):
             return False
-        if w[0] in BOUNDARY_CHARS or w[-1] in BOUNDARY_CHARS:
+        if w.endswith(DOC_TAIL):  # 文件体裁不是提法
+            return False
+        if w[0] in BROKEN_HEAD_CHARS:  # 词被从中间切开的碎片
+            return False
+        # 术语里几乎不会出现虚词; 一旦"的/和/为/等"出现在中间, 说明是标题片段
+        if any(ch in BOUNDARY_CHARS for ch in w):
+            return False
+        if any(w.startswith(v) for v in VERB_HEAD):  # 动词开头的标题片段
+            return False
+        if any(w.endswith(v) for v in VERB_TAIL):  # 动词结尾的碎片
+            return False
+        # 已经是已知词汇的一部分(如"保基金"⊂"社保基金"), 说明是碎片或没新意
+        if any(w != s and w in s for s in skip):
             return False
         if require_domain and not any(tok in w for tok in FINANCE_TOKENS):
             return False
@@ -184,7 +223,8 @@ def mine_candidates(
     df: Counter = Counter()
     all_df: Counter = Counter()
     for r in rows:
-        text = r.get("title") or ""
+        # 去掉"2026年/9月/13日"这类日期串: 否则会切出"年公募基金"这种碎片
+        text = re.sub(r"\d+\s*[年月日号]", " ", r.get("title") or "")
         seen: set[str] = set()
         seen_all: set[str] = set()
         for run in __import__("re").findall(r"[一-龥]{4,40}", text):
@@ -266,9 +306,11 @@ def mine_candidates(
                 "first_year": years[0] if years else "",
                 "latest_year": years[-1] if years else "",
                 "by_year": [{"year": y, "n": by_year[y]} for y in years],
+                # "新近度": 近三年出现占比越高, 越可能是这两年才冒出来的新提法
+                "recent_share": round(recent / max(1, sum(by_year.values())), 2),
                 "samples": samples_titles,
             }
         )
-        if len(out) >= top:
-            break
-    return out
+    # 排序: 新近度优先(新提法比老提法有价值), 其次出现次数
+    out.sort(key=lambda c: (-c.get("recent_share", 0), -c["n"]))
+    return out[:top]

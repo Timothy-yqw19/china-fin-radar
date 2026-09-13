@@ -28,6 +28,8 @@ DATE_RE = re.compile(r"(20\d{2})[-./年](\d{1,2})[-./月](\d{1,2})")
 HREF_DATE_RE = re.compile(r"(20\d{2})(\d{2})(\d{2})")
 # 部分站点的列表只给 MM-DD (年份靠当前时间推断)
 MD_RE = re.compile(r"(?<!\d)(\d{1,2})[-./月](\d{1,2})(?!\d)")
+# 实时快讯列表常只写 HH:MM（当天）
+HM_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
 # 列表把日期写在 <a> 内部(如 <i>09-02</i>), 取文本会把日期粘在标题尾部
 TAIL_DATE_RE = re.compile(r"(?:20\d{2}[-./年])?\d{1,2}[-./月]\d{1,2}日?$")
 
@@ -62,6 +64,14 @@ def extract_date(text: str, href: str = "") -> str:
             if (cand - today).days > 31:  # 明显在未来 → 属于上一年
                 cand = cand - timedelta(days=365)
             return cand.isoformat()
+    # 只有 HH:MM 的实时列表: 按"今天"处理（北京时间的今天）
+    hm = HM_RE.search(t)
+    if hm:
+        from ..utils import now_cn
+
+        hh, mm = int(hm.group(1)), int(hm.group(2))
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return now_cn().date().isoformat()
     return ""
 
 # ---------------------------------------------------------------- 金融监管总局

@@ -88,6 +88,33 @@ sources:
         require_date: true
 
   # 交易所暂未接入：上交所 /lawandrules/ 与深交所 /lawrules/ 的列表都是 JS 渲染的
+  - id: stcn
+    name: 证券时报
+    kind: official
+    base_score: 25
+    homepage: https://www.stcn.com/
+    pages:
+      # 实时快讯列表：只有 HH:MM（当天），extract_date 会按"今天"处理
+      - url: https://www.stcn.com/
+        channel: 证券时报·快讯
+        item_selector: "li"
+        link_selector: "a[href]"
+        require_date: true
+
+  # - id: people_fin
+  #   name: 人民网财经
+  #   kind: official
+  #   base_score: 25
+  #   homepage: http://finance.people.com.cn/
+  #   pages:
+  #     # 列表区没有稳定日期字段（首页是滚动字幕），需要单独写解析器
+  #     - url: http://finance.people.com.cn/
+  #       channel: 人民网·财经
+  #       item_selector: "li"
+  #       link_selector: "a[href]"
+  #       require_date: true
+
+  # 交易所暂未接入：上交所 /lawandrules/ 与深交所 /lawrules/ 的列表都是 JS 渲染的
   # （HTML 骨架里没有数据），要抓得用 headless browser 或它们的内网 JSON 接口。
   # - id: sse
   #   name: 上海证券交易所

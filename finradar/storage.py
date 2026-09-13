@@ -136,6 +136,7 @@ class Store:
         min_score: float = 0.0,
         keyword: str | None = None,
         limit: int = 200,
+        exclude_sources: list[str] | None = None,
     ) -> list[dict]:
         sql = "SELECT * FROM news WHERE policy_score >= ?"
         args: list = [min_score]
@@ -145,6 +146,10 @@ class Store:
         if source:
             sql += " AND source = ?"
             args.append(source)
+        if exclude_sources:
+            marks = ",".join("?" * len(exclude_sources))
+            sql += f" AND source NOT IN ({marks})"
+            args.extend(exclude_sources)
         if keyword:
             sql += " AND (title LIKE ? OR summary LIKE ?)"
             args += [f"%{keyword}%", f"%{keyword}%"]
