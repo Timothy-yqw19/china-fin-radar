@@ -48,9 +48,9 @@ finradar crawl --source all --pages 1
 finradar report --days 3 --min-score 55
 
 # 看长周期：回捞历史（一次性），然后按 3m/6m/1y/3y/5y 看
-finradar backfill --from 2021-01-01
-finradar hot --window 5y --trend          # 词 × 年 演变矩阵
-finradar report --window 1y --min-score 70 # 近一年的政策回顾
+finradar backfill --from 2015-01-01        # 政策库可回溯到 2013 年，一次补到十年前
+finradar hot --window 10y --trend          # 词 × 年 演变矩阵（起落一目了然）
+finradar report --window 10y --min-score 70 # 十年政策回顾
 
 # 近 30 天热词榜 + 新词发现
 finradar hot --days 30 --discover
@@ -250,8 +250,8 @@ finradar/
 │   ├── qbank.py         题库加载与检索
 │   └── quiz.py          刷题引擎、错题本
 └── data/
-    ├── glossary/*.yaml  热词库（46 个词条）
-    ├── insights/*.yaml  专题洞察（6 条主线）
+    ├── glossary/*.yaml  热词库（52 个词条）
+    ├── insights/*.yaml  专题洞察（8 条主线）
     └── questions/*.yaml 题库（62 道题）
 config/
 ├── keywords.yaml        打分规则（改这里就能调打分口径）
@@ -268,7 +268,7 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   174 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+tests/                   182 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
 ```
 
 ---
@@ -277,7 +277,7 @@ tests/                   174 个测试：数据完整性 + 解析器 + 打分 + 
 
 ```bash
 pip install -e ".[dev]"
-pytest -q            # 174 passed
+pytest -q            # 182 passed
 ruff check .
 ```
 
