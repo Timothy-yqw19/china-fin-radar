@@ -341,9 +341,15 @@ q("#nCand").textContent = D.candidates.length;
 q("#nNews").textContent = num(D.n_news);
 q("#cover").textContent = D.coverage || "—";
 q("#gen").textContent = D.generated || "—";
-if (D.reports_url) {
-  const nav = document.querySelector("#reportsNav");
-  if (nav) nav.innerHTML = "<a href='" + D.reports_url + "'>历史政策通报归档 →</a>";
+const nav = document.querySelector("#reportsNav");
+if (nav) {
+  const links = [];
+  if (D.reports_url) links.push("<a href='" + D.reports_url + "'>历史政策通报归档 →</a>");
+  if (D.docs_url) {
+    links.push("<a href='" + D.docs_url + "银行面试_投行与金融市场线.md'>"
+      + "银行面试专题 · 投行与金融市场线</a>");
+  }
+  if (links.length) nav.innerHTML = links.join("　·　");
 }
 renderFeatures(); renderInsights(); renderTerms(); renderCandidates(); initFilters(); initTabs();
 

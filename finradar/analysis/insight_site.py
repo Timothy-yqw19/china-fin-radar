@@ -51,6 +51,7 @@ def build_payload(
     features: bool = True,
     min_score: float = 30.0,
     reports_url: str | None = None,
+    docs_url: str | None = None,
 ) -> dict:
     """组装网页数据. insights/terms 传 None 表示全部, 传 [] 表示不要这一段."""
     insights = list(I.load_insights() if insights is None else insights)
@@ -75,6 +76,8 @@ def build_payload(
         "coverage": f"{date_sorted[0]} ~ {date_sorted[-1]}" if date_sorted else "",
         # 静态站点上指向归档通报的入口(本地打开时为 None, 不显示)
         "reports_url": reports_url,
+        # 静态站点上的文档入口(本地打开时为 None, 不显示)
+        "docs_url": docs_url,
         "insights": ins_payload,
         # 成篇报道: 只带上写了正文的
         "features": (

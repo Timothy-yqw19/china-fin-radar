@@ -5,7 +5,7 @@
 
     python scripts/build_static_site.py --out-dir public
     → public/index.html  专题报道 + 洞察速查 + 名词档案（语料统计为空）
-    → public/kb.html     词库刷题页（52 词 / 62 题）
+    → public/kb.html     词库刷题页（52 词 / 92 题，含两个面试专项板块）
     → public/.nojekyll
 """
 
@@ -32,7 +32,9 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     # 1) 专题洞察网页: rows=[] 表示"没有语料统计", 其余内容(专题/报道/名词/题库)照旧
-    payload = build_payload([], candidates=False, reports_url="docs/reports/index.html")
+    payload = build_payload(
+        [], candidates=False, reports_url="docs/reports/index.html", docs_url="docs/"
+    )
     (out / "index.html").write_text(render_site(payload), encoding="utf-8")
 
     # 2) 词库刷题页: 复用现成的构建脚本(按文件路径加载, 免得依赖 scripts 是包)
