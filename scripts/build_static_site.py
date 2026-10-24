@@ -6,6 +6,7 @@
     python scripts/build_static_site.py --out-dir public
     → public/index.html  专题报道 + 洞察速查 + 名词档案（语料统计为空）
     → public/kb.html     词库刷题页（52 词 / 92 题，含两个面试专项板块）
+    → public/docs/*.html 长文排版页面（目前是银行面试专题）
     → public/.nojekyll
 """
 
@@ -58,6 +59,16 @@ def main() -> None:
     docs = ROOT / "docs"
     if docs.exists():
         shutil.copytree(docs, out / "docs", dirs_exist_ok=True)
+
+    # 5) 长文另外渲染成排版页面（.md 在 Pages 上是纯文本，读起来不方便）
+    from finradar.analysis.doc_page import render_doc
+
+    for md in (sorted(docs.glob("*.md")) if docs.exists() else []):
+        if not md.name.startswith(("银行面试",)):
+            continue
+        page = out / "docs" / md.with_suffix(".html").name
+        page.write_text(render_doc(md), encoding="utf-8")
+        print(f"  docs/{page.name}（排版页面）")
 
     print(f"已生成静态站点 → {out}")
     print(f"  index.html（专题 {len(payload['insights'])} 条 / 名词 {len(payload['terms'])} 条）")

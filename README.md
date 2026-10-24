@@ -41,7 +41,8 @@
 | `docs/reports/` | **政策通报归档**（`finradar publish` 生成，按日期倒序，公文体） |
 | `kb.html` | 词库刷题页（52 词 / 92 题，含「投行与金融市场线」「面试方法与群面」两个面试专项板块） |
 | `docs/` | 考点手册等 Markdown |
-| `docs/银行面试_投行与金融市场线.md` | **银行面试专题**：招行总行投行/金市条线的四关流程、真题、群面与辩论打法 |
+| `docs/银行面试_投行与金融市场线.html` | **银行面试专题（排版页）**：招行总行投行/金市条线的四关流程、真题、群面与辩论打法 |
+| `docs/银行面试_投行与金融市场线.md` | 同一份内容的 Markdown 源（排版页由它自动生成） |
 
 **首次需要手动开启一次**：仓库 `Settings → Pages → Source` 选 **GitHub Actions**，
 之后每次推送自动更新（工作流见 `.github/workflows/pages.yml`）。
@@ -306,7 +307,8 @@ web/
 scripts/demo_seed.py     离线演示
 scripts/build_artifact.py      生成 output/kb.html
 scripts/build_insight_site.py  生成 output/insights.html
-tests/                   200 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口
+scripts/build_interview_doc.py docs/*.md → 排版页面（public/docs/*.html）
+tests/                   236 个测试：数据完整性 + 解析器 + 打分 + 存储 + 报告 + 时间窗口 + 长文排版
 ```
 
 ---
